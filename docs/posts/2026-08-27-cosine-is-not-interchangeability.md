@@ -79,7 +79,7 @@ If you only remember one comparison: **negation median 0.95, gold paraphrase med
 
 ## Next
 
-A two-stage cache: retrieve at a low threshold, then verify interchangeability (cross-encoder or LLM judge) on the candidates. The cost of the judge has to be a small fraction of the provider spend it saves. That is M2.
+Done in M2: [`2026-08-29-verification-frontier.md`](2026-08-29-verification-frontier.md). Retrieve at 0.70, then an LLM judge → 97% hit, **4.9%** false-hit for 5.3% of the spend saved (vs 73% / 37% cosine-only). Every residual false hit is `language_switch`.
 
 
 Date: 2026-08-27
@@ -147,4 +147,4 @@ If you only remember one comparison: **negation median 0.95, gold paraphrase med
 
 ## Next
 
-A two-stage cache: retrieve at a low threshold, then verify interchangeability (cross-encoder or LLM judge) on the candidates. The cost of the judge has to be a small fraction of the provider spend it saves. That is M2.
+Done in M2: [`2026-08-29-verification-frontier.md`](2026-08-29-verification-frontier.md). Retrieve at 0.70, then an LLM judge → 97% hit, **4.9%** false-hit for 5.3% of the spend saved (vs 73% / 37% cosine-only). Every residual false hit is `language_switch`.

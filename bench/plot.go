@@ -46,19 +46,27 @@ func writeFrontierSVG(path string, sweeps []namedSweep) error {
 
 	for i, s := range sweeps {
 		color := colors[i%len(colors)]
-		var pts []string
-		for _, r := range s.rows {
-			pts = append(pts, fmt.Sprintf("%.1f,%.1f", x(r.hitRate), y(r.falseHit)))
-		}
-		fmt.Fprintf(&b, `<polyline fill="none" stroke="%s" stroke-width="2" points="%s"/>`+"\n", color, strings.Join(pts, " "))
 		if len(s.rows) == 0 {
 			continue
 		}
-		// Mark the default-gateway threshold 0.95 if present.
-		for _, r := range s.rows {
-			if math.Abs(r.threshold-0.95) < 1e-9 {
-				fmt.Fprintf(&b, `<circle cx="%.1f" cy="%.1f" r="4" fill="%s"/>`+"\n", x(r.hitRate), y(r.falseHit), color)
-				break
+
+		// Верификатор без сетки порогов — это одна точка, а polyline из одной
+		// точки ничего не рисует.
+		if len(s.rows) == 1 {
+			r := s.rows[0]
+			fmt.Fprintf(&b, `<circle cx="%.1f" cy="%.1f" r="6" fill="%s"/>`+"\n", x(r.hitRate), y(r.falseHit), color)
+		} else {
+			var pts []string
+			for _, r := range s.rows {
+				pts = append(pts, fmt.Sprintf("%.1f,%.1f", x(r.hitRate), y(r.falseHit)))
+			}
+			fmt.Fprintf(&b, `<polyline fill="none" stroke="%s" stroke-width="2" points="%s"/>`+"\n", color, strings.Join(pts, " "))
+			// Mark the default-gateway threshold 0.95 if present.
+			for _, r := range s.rows {
+				if math.Abs(r.threshold-0.95) < 1e-9 {
+					fmt.Fprintf(&b, `<circle cx="%.1f" cy="%.1f" r="4" fill="%s"/>`+"\n", x(r.hitRate), y(r.falseHit), color)
+					break
+				}
 			}
 		}
 		fmt.Fprintf(&b, `<text x="%.1f" y="%.1f" fill="%s">%s</text>`+"\n",

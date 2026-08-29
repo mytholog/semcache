@@ -1,4 +1,4 @@
-.PHONY: pilot study study-local genv1 csv verify fmt vet test tidy
+.PHONY: pilot study study-local verify-study genv1 csv verify fmt vet test race tidy
 
 pilot:
 	go run ./bench -dataset bench/dataset/pilot.jsonl -models text-embedding-3-small
@@ -15,7 +15,10 @@ genv1:
 csv:
 	go run ./bench -dataset bench/dataset/v1.jsonl -models text-embedding-3-small
 
-verify: fmt vet test
+verify-study:
+	go run ./bench -mode verify -dataset bench/dataset/v1.jsonl -models text-embedding-3-small
+
+verify: fmt vet race
 
 fmt:
 	gofmt -l -w .
@@ -25,6 +28,9 @@ vet:
 
 test:
 	go test ./...
+
+race:
+	go test -race ./...
 
 tidy:
 	go mod tidy

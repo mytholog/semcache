@@ -36,3 +36,6 @@ bench/*.csv
 bench/out/*.csv
 bench/.venv/
 bench/**/__pycache__/
+
+# Serena project state
+.serena/

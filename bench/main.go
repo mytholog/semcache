@@ -20,24 +20,36 @@ import (
 )
 
 type config struct {
-	dataset   string
-	models    string
-	dims      int
-	cacheDir  string
-	baseURL   string
-	script    string
-	from      float64
-	to        float64
-	step      float64
-	minRecall float64
-	outDir    string
-	timeout   time.Duration
-	localTO   time.Duration
+	dataset      string
+	mode         string
+	models       string
+	dims         int
+	cacheDir     string
+	baseURL      string
+	script       string
+	from         float64
+	to           float64
+	step         float64
+	minRecall    float64
+	outDir       string
+	timeout      time.Duration
+	localTO      time.Duration
+	retrieveMin  float64
+	ceFrom       float64
+	ceTo         float64
+	ceStep       float64
+	rerankModel  string
+	rerankScript string
+	rerankTO     time.Duration
+	judgeModel   string
+	skipJudge    bool
+	providerUSD  float64
 }
 
 func main() {
 	var cfg config
 	flag.StringVar(&cfg.dataset, "dataset", "bench/dataset/pilot.jsonl", "path to the JSONL dataset")
+	flag.StringVar(&cfg.mode, "mode", "sweep", "sweep (cosine only) or verify (two-stage)")
 	flag.StringVar(&cfg.models, "models", "text-embedding-3-small", "comma-separated model ids: text-embedding-3-small,bge-m3,e5-large")
 	flag.IntVar(&cfg.dims, "dimensions", 0, "embedding dimensions for OpenAI (0 = model default)")
 	flag.StringVar(&cfg.cacheDir, "cache", "bench/.cache", "directory for the embedding cache")
@@ -50,6 +62,16 @@ func main() {
 	flag.StringVar(&cfg.outDir, "out", "bench/out", "directory for CSV and SVG artifacts")
 	flag.DurationVar(&cfg.timeout, "timeout", 2*time.Minute, "per-request timeout for the OpenAI API")
 	flag.DurationVar(&cfg.localTO, "local-timeout", 30*time.Minute, "timeout for one local embedding batch (model load included)")
+	flag.Float64Var(&cfg.retrieveMin, "retrieve-min", 0.70, "stage-1 cosine floor before verification")
+	flag.Float64Var(&cfg.ceFrom, "ce-from", 0.50, "lowest cross-encoder threshold")
+	flag.Float64Var(&cfg.ceTo, "ce-to", 0.999, "highest cross-encoder threshold")
+	flag.Float64Var(&cfg.ceStep, "ce-step", 0.05, "cross-encoder threshold step")
+	flag.StringVar(&cfg.rerankModel, "rerank-model", "BAAI/bge-reranker-base", "sentence-transformers CrossEncoder id")
+	flag.StringVar(&cfg.rerankScript, "rerank-script", "bench/rerank.py", "Python sidecar for the cross-encoder")
+	flag.DurationVar(&cfg.rerankTO, "rerank-timeout", 30*time.Minute, "timeout for one rerank batch (model load included)")
+	flag.StringVar(&cfg.judgeModel, "judge-model", "gpt-4o-mini", "chat model for the LLM judge")
+	flag.BoolVar(&cfg.skipJudge, "skip-judge", false, "skip the LLM judge (cross-encoder only)")
+	flag.Float64Var(&cfg.providerUSD, "provider-usd", 0.002, "assumed USD of one provider completion saved by a cache hit")
 	flag.Parse()
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
@@ -62,6 +84,13 @@ func main() {
 }
 
 func run(ctx context.Context, cfg config) error {
+	if cfg.mode == "verify" {
+		return runVerify(ctx, cfg)
+	}
+	if cfg.mode != "sweep" {
+		return fmt.Errorf("unknown mode %q (sweep or verify)", cfg.mode)
+	}
+
 	pairs, err := dataset.Load(cfg.dataset)
 	if err != nil {
 		return err
@@ -102,34 +131,53 @@ type modelResult struct {
 }
 
 func runModel(ctx context.Context, cfg config, pairs []dataset.Pair, name string) (modelResult, error) {
-	spec, err := resolveModel(name)
+	scoredPairs, emb, err := embedScored(ctx, cfg, pairs, name)
 	if err != nil {
 		return modelResult{}, err
+	}
+	rows := sweep(scoredPairs, cfg.from, cfg.to, cfg.step)
+	if len(rows) == 0 {
+		return modelResult{}, fmt.Errorf("empty sweep: check -from/-to/-step")
+	}
+	report(os.Stdout, cfg, name, scoredPairs, rows, emb)
+	return modelResult{rows: rows}, nil
+}
+
+func embedScored(ctx context.Context, cfg config, pairs []dataset.Pair, name string) ([]scored, *embedder, error) {
+	spec, err := resolveModel(name)
+	if err != nil {
+		return nil, nil, err
 	}
 
 	var embed batchEmbed
 	switch spec.kind {
 	case "openai":
-		client, err := newOpenAI(cfg.baseURL, os.Getenv("OPENAI_API_KEY"), spec.remote, cfg.dims, cfg.timeout)
-		if err != nil {
-			return modelResult{}, err
+		if key := os.Getenv("OPENAI_API_KEY"); key != "" {
+			client, err := newOpenAI(cfg.baseURL, key, spec.remote, cfg.dims, cfg.timeout)
+			if err != nil {
+				return nil, nil, err
+			}
+			embed = client.embed
+		} else {
+			embed = func(context.Context, []string) ([][]float32, int, error) {
+				return nil, 0, fmt.Errorf("OPENAI_API_KEY is not set and embedding cache missed")
+			}
 		}
-		embed = client.embed
 	case "local":
 		if err := localScriptExists(cfg.script); err != nil {
-			return modelResult{}, err
+			return nil, nil, err
 		}
 		embed = newLocal(spec.remote, spec.prefix, cfg.script, cfg.localTO)
 	default:
-		return modelResult{}, fmt.Errorf("unsupported embedder kind %q", spec.kind)
+		return nil, nil, fmt.Errorf("unsupported embedder kind %q", spec.kind)
 	}
 
 	emb, err := newCachedEmbedder(spec, cfg.dims, cfg.cacheDir, embed)
 	if err != nil {
-		return modelResult{}, err
+		return nil, nil, err
 	}
 	if err := emb.embedAll(ctx, dataset.Texts(pairs)); err != nil {
-		return modelResult{}, err
+		return nil, nil, err
 	}
 
 	scoredPairs := make([]scored, 0, len(pairs))
@@ -137,17 +185,11 @@ func runModel(ctx context.Context, cfg config, pairs []dataset.Pair, name string
 		va, okA := emb.vector(p.A)
 		vb, okB := emb.vector(p.B)
 		if !okA || !okB {
-			return modelResult{}, fmt.Errorf("missing embedding for pair %s", p.ID)
+			return nil, nil, fmt.Errorf("missing embedding for pair %s", p.ID)
 		}
 		scoredPairs = append(scoredPairs, scored{Pair: p, sim: similarity(va, vb)})
 	}
-
-	rows := sweep(scoredPairs, cfg.from, cfg.to, cfg.step)
-	if len(rows) == 0 {
-		return modelResult{}, fmt.Errorf("empty sweep: check -from/-to/-step")
-	}
-	report(os.Stdout, cfg, spec.name, scoredPairs, rows, emb)
-	return modelResult{rows: rows}, nil
+	return scoredPairs, emb, nil
 }
 
 func splitModels(s string) []string {

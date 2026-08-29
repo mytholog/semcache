@@ -28,3 +28,21 @@ func TestWriteFrontierSVG(t *testing.T) {
 		t.Fatal("svg missing polyline")
 	}
 }
+
+func TestWriteFrontierSVGSinglePoint(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "frontier.svg")
+	sweeps := []namedSweep{{
+		name: "llm-judge",
+		rows: []row{{threshold: 1, hitRate: 0.97, falseHit: 0.049}},
+	}}
+	if err := writeFrontierSVG(path, sweeps); err != nil {
+		t.Fatal(err)
+	}
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(data), "<circle") {
+		t.Fatal("single-point sweep is invisible: svg has no circle")
+	}
+}
