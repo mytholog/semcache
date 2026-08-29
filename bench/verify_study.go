@@ -37,6 +37,8 @@ func runVerify(ctx context.Context, cfg config) error {
 		return err
 	}
 
+	gate := sweepLanguageGate(os.Stdout, scoredPairs, cfg.retrieveMin)
+
 	sims, labels := splitScores(scoredPairs)
 	noopOK := make([]bool, len(scoredPairs))
 	for i := range noopOK {
@@ -65,6 +67,9 @@ func runVerify(ctx context.Context, cfg config) error {
 
 	ceRows := sweepVerifier(sims, labels, ceScores, cfg.retrieveMin, cfg.ceFrom, cfg.ceTo, cfg.ceStep)
 
+	gateOK := languageGateMask(scoredPairs, gate)
+	gatedCERows := sweepVerifier(sims, labels, maskScores(ceScores, gateOK), cfg.retrieveMin, cfg.ceFrom, cfg.ceTo, cfg.ceStep)
+
 	var (
 		judgeCounts verify.Counts
 		judgeCost   verify.Cost
@@ -80,7 +85,13 @@ func runVerify(ctx context.Context, cfg config) error {
 		}
 	}
 
+	var gatedJudge verify.Counts
+	if haveJudge {
+		gatedJudge = verify.Evaluate(sims, labels, cfg.retrieveMin, andMask(judgeOK, gateOK))
+	}
+
 	reportVerify(os.Stdout, cfg, names[0], scoredPairs, emb, cosineRows, noop, ceRows, ceScores, haveJudge, judgeCounts, judgeCost, judgeOK)
+	reportGate(os.Stdout, cfg, ceRows, gatedCERows, haveJudge, judgeCounts, gatedJudge)
 
 	csvPath := filepath.Join(cfg.outDir, "verify-sweep.csv")
 	if err := writeVerifyCSV(csvPath, cosineRows, ceRows, haveJudge, judgeCounts); err != nil {

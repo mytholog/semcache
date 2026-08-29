@@ -7,10 +7,13 @@ Measured on 616 labeled pairs, embeddings from `text-embedding-3-small`, stage-1
 | Stage | Hit rate | False-hit rate | Verify cost |
 |---|---|---|---|
 | Cosine only, θ = 0.90 | 73% | **37%** (161/432) | — |
-| Cross-encoder `bge-reranker-base`, τ = 0.99 | 87% | 6.0% (26/432) | $0, local |
-| **LLM judge `gpt-4o-mini`** | **97%** | **4.9%** (21/432) | **5.3%** of savings |
+| Cross-encoder `bge-reranker-base`, τ = 0.999 | 72% | 2.8% (12/432) | $0, local |
+| LLM judge `gpt-4o-mini` | **97%** | 4.9% (21/432) | 5.3% of savings |
+| **+ language gate** | **97%** | **1.4%** (6/432) | same |
 
-The judge gives 24 points more recall and ~8× fewer silent wrong answers for 5.3% of the provider spend it avoids. **Excluding `language_switch`, false-hit is 0.0% (0/359)** — negation, entity swaps, numbers, dates and scope are fully separated; wrong-language answers are the one leak left, in both verifiers.
+The judge gives 24 points more recall and 7× fewer silent wrong answers than cosine alone, for 5.3% of the provider spend it avoids. Adding a deterministic language gate in front of stage 2 cuts false hits by a further 3.5 points **without costing a single hit**, because an answer in the wrong language is never interchangeable and no model call is needed to see that.
+
+Every false hit left in either verifier is `language_switch`: **excluding that category, false-hit is 0.0% (0/359)** — negation, entity swaps, numbers, dates and scope are fully separated. The gate closes 17 of the 24 such pairs that reach stage 2; the residual 7 are short English queries, where language identification cannot be trusted without also rejecting legitimate keyword traffic ([why](docs/posts/2026-08-29-verification-frontier.md#the-language-gate-and-what-it-cannot-do)).
 
 - M1 write-up: [`docs/posts/2026-08-27-cosine-is-not-interchangeability.md`](docs/posts/2026-08-27-cosine-is-not-interchangeability.md)
 - M2 write-up: [`docs/posts/2026-08-29-verification-frontier.md`](docs/posts/2026-08-29-verification-frontier.md)

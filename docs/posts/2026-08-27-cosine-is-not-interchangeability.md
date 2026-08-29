@@ -79,7 +79,7 @@ If you only remember one comparison: **negation median 0.95, gold paraphrase med
 
 ## Next
 
-Done in M2: [`2026-08-29-verification-frontier.md`](2026-08-29-verification-frontier.md). Retrieve at 0.70, then an LLM judge → 97% hit, **4.9%** false-hit for 5.3% of the spend saved (vs 73% / 37% cosine-only). Every residual false hit is `language_switch`.
+Done in M2: [`2026-08-29-verification-frontier.md`](2026-08-29-verification-frontier.md). Retrieve at 0.70, then an LLM judge → 97% hit, 4.9% false-hit for 5.3% of the spend saved (vs 73% / 37% cosine-only). Every residual false hit is `language_switch`; a deterministic language gate in front of the judge takes it to **1.4%** at no cost in recall.
 
 
 Date: 2026-08-27
@@ -147,4 +147,4 @@ If you only remember one comparison: **negation median 0.95, gold paraphrase med
 
 ## Next
 
-Done in M2: [`2026-08-29-verification-frontier.md`](2026-08-29-verification-frontier.md). Retrieve at 0.70, then an LLM judge → 97% hit, **4.9%** false-hit for 5.3% of the spend saved (vs 73% / 37% cosine-only). Every residual false hit is `language_switch`.
+Done in M2: [`2026-08-29-verification-frontier.md`](2026-08-29-verification-frontier.md). Retrieve at 0.70, then an LLM judge → 97% hit, 4.9% false-hit for 5.3% of the spend saved (vs 73% / 37% cosine-only). Every residual false hit is `language_switch`; a deterministic language gate in front of the judge takes it to **1.4%** at no cost in recall.
