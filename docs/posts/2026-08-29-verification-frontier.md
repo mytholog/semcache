@@ -101,4 +101,4 @@ The positive class sits at 0.9997+, so **the entire useful threshold range is ab
 
 ## Next
 
-M3: eager tagged invalidation in Postgres, atomic with vector removal — and a language column on the entry, which is what actually closes the residual `language_switch` leak.
+Done in M3: [`2026-08-29-eager-invalidation-buys-recall.md`](2026-08-29-eager-invalidation-buys-recall.md). Tagged entries in pgvector with one transactional `DELETE`, measured against TTL — which loses 89 points of recall at 99% dead — and a `lang` column on the entry, written from the full answer, where the language of a five-word query cannot be guessed. Wiring it into the gate is M4.

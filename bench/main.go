@@ -44,12 +44,19 @@ type config struct {
 	judgeModel   string
 	skipJudge    bool
 	providerUSD  float64
+	pgDSN        string
+	pgSchema     string
+	pgKeep       bool
+	docs         int
+	corpusSize   int
+	k            int
+	efSearch     int
 }
 
 func main() {
 	var cfg config
 	flag.StringVar(&cfg.dataset, "dataset", "bench/dataset/pilot.jsonl", "path to the JSONL dataset")
-	flag.StringVar(&cfg.mode, "mode", "sweep", "sweep (cosine only) or verify (two-stage)")
+	flag.StringVar(&cfg.mode, "mode", "sweep", "sweep (cosine only), verify (two-stage) or invalidate (Postgres tags)")
 	flag.StringVar(&cfg.models, "models", "text-embedding-3-small", "comma-separated model ids: text-embedding-3-small,bge-m3,e5-large")
 	flag.IntVar(&cfg.dims, "dimensions", 0, "embedding dimensions for OpenAI (0 = model default)")
 	flag.StringVar(&cfg.cacheDir, "cache", "bench/.cache", "directory for the embedding cache")
@@ -72,6 +79,13 @@ func main() {
 	flag.StringVar(&cfg.judgeModel, "judge-model", "gpt-4o-mini", "chat model for the LLM judge")
 	flag.BoolVar(&cfg.skipJudge, "skip-judge", false, "skip the LLM judge (cross-encoder only)")
 	flag.Float64Var(&cfg.providerUSD, "provider-usd", 0.002, "assumed USD of one provider completion saved by a cache hit")
+	flag.StringVar(&cfg.pgDSN, "pg-dsn", os.Getenv("SEMCACHE_DSN"), "Postgres DSN for -mode invalidate (defaults to $SEMCACHE_DSN)")
+	flag.StringVar(&cfg.pgSchema, "pg-schema", "semcache_bench", "Postgres schema for the invalidation study")
+	flag.BoolVar(&cfg.pgKeep, "pg-keep", false, "keep the corpus in Postgres after the study for manual inspection")
+	flag.IntVar(&cfg.docs, "docs", 4, "documents in the corpus; one of them is mutated, so 4 means 25% of entries die")
+	flag.IntVar(&cfg.corpusSize, "corpus-size", 20000, "entries in the invalidation corpus; real prompts padded with perturbations so the planner reaches for HNSW")
+	flag.IntVar(&cfg.k, "k", 5, "candidates retrieved per lookup")
+	flag.IntVar(&cfg.efSearch, "ef-search", 40, "hnsw.ef_search; pgvector default is 40")
 	flag.Parse()
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
@@ -84,11 +98,14 @@ func main() {
 }
 
 func run(ctx context.Context, cfg config) error {
-	if cfg.mode == "verify" {
+	switch cfg.mode {
+	case "verify":
 		return runVerify(ctx, cfg)
-	}
-	if cfg.mode != "sweep" {
-		return fmt.Errorf("unknown mode %q (sweep or verify)", cfg.mode)
+	case "invalidate":
+		return runInvalidate(ctx, cfg)
+	case "sweep":
+	default:
+		return fmt.Errorf("unknown mode %q (sweep, verify or invalidate)", cfg.mode)
 	}
 
 	pairs, err := dataset.Load(cfg.dataset)

@@ -34,6 +34,7 @@ go.work.sum
 bench/.cache/
 bench/*.csv
 bench/out/*.csv
+bench/out/*.txt
 bench/.venv/
 bench/**/__pycache__/
 

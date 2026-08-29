@@ -5,6 +5,7 @@ import (
 	"math"
 	"slices"
 	"sync"
+	"time"
 )
 
 // Memory — жадное in-memory хранилище для бенчмарков и тестов:
@@ -60,9 +61,10 @@ func (m *Memory) Lookup(_ context.Context, promptHash string, vec []float32, k i
 	seen := make(map[string]struct{})
 	out := make([]Candidate, 0, k)
 
+	now := time.Now()
 	for _, id := range m.byHash[promptHash] {
 		e, ok := m.entries[id]
-		if !ok {
+		if !ok || expired(e, now) {
 			continue
 		}
 		out = append(out, Candidate{Entry: cloneEntry(e), Score: 1})
@@ -79,6 +81,9 @@ func (m *Memory) Lookup(_ context.Context, promptHash string, vec []float32, k i
 	rest := make([]scored, 0, len(m.entries))
 	for id, e := range m.entries {
 		if _, ok := seen[id]; ok {
+			continue
+		}
+		if expired(e, now) {
 			continue
 		}
 		rest = append(rest, scored{id: id, score: cosine(vec, e.Vector)})
