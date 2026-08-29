@@ -1,0 +1,80 @@
+{"id":"neg-001","category":"negation","a":"Can I deploy the agent without a license key?","b":"Can I deploy the agent with a license key?","interchangeable":false,"human_authored":true,"note":"one word flips the answer"}
+{"id":"neg-002","category":"negation","a":"Does the free plan include SSO?","b":"Does the free plan exclude SSO?","interchangeable":false,"human_authored":true}
+{"id":"neg-003","category":"negation","a":"Does this API require authentication?","b":"Does this API not require authentication?","interchangeable":false,"human_authored":true}
+{"id":"neg-004","category":"negation","a":"Are deleted records recoverable?","b":"Are deleted records irrecoverable?","interchangeable":false,"human_authored":true}
+{"id":"neg-005","category":"negation","a":"Is the webhook payload encrypted at rest?","b":"Is the webhook payload unencrypted at rest?","interchangeable":false,"human_authored":true}
+{"id":"neg-006","category":"negation","a":"Should I enable debug logs in production?","b":"Should I disable debug logs in production?","interchangeable":false,"human_authored":true}
+{"id":"neg-007","category":"negation","a":"Does the SDK support streaming responses?","b":"Does the SDK not support streaming responses?","interchangeable":false,"human_authored":true}
+{"id":"neg-008","category":"negation","a":"Is the default admin port open to the internet?","b":"Is the default admin port closed to the internet?","interchangeable":false,"human_authored":true}
+{"id":"neg-009","category":"negation","a":"Does the contract allow sublicensing?","b":"Does the contract forbid sublicensing?","interchangeable":false,"human_authored":true}
+{"id":"neg-010","category":"negation","a":"Can guests access the analytics dashboard?","b":"Can guests not access the analytics dashboard?","interchangeable":false,"human_authored":true}
+{"id":"ent-001","category":"entity_swap","a":"What is the refund policy for EU customers?","b":"What is the refund policy for US customers?","interchangeable":false,"human_authored":true,"note":"jurisdiction changes the answer entirely"}
+{"id":"ent-002","category":"entity_swap","a":"How do I rotate the API key for the staging environment?","b":"How do I rotate the API key for the production environment?","interchangeable":false,"human_authored":true}
+{"id":"ent-003","category":"entity_swap","a":"Where do I set the Redis connection string?","b":"Where do I set the Postgres connection string?","interchangeable":false,"human_authored":true}
+{"id":"ent-004","category":"entity_swap","a":"How do I verify a Stripe webhook signature?","b":"How do I verify a PayPal webhook signature?","interchangeable":false,"human_authored":true}
+{"id":"ent-005","category":"entity_swap","a":"What is the outbound IP range for us-east-1?","b":"What is the outbound IP range for eu-west-1?","interchangeable":false,"human_authored":true}
+{"id":"ent-006","category":"entity_swap","a":"How do I configure the Slack bot token?","b":"How do I configure the Teams bot token?","interchangeable":false,"human_authored":true}
+{"id":"ent-007","category":"entity_swap","a":"Who is the billing contact for Acme Corp?","b":"Who is the billing contact for Globex Inc?","interchangeable":false,"human_authored":true}
+{"id":"ent-008","category":"entity_swap","a":"How do I rotate the GitHub webhook secret?","b":"How do I rotate the GitLab webhook secret?","interchangeable":false,"human_authored":true}
+{"id":"ent-009","category":"entity_swap","a":"Where is the TLS certificate for app.example.com?","b":"Where is the TLS certificate for api.example.com?","interchangeable":false,"human_authored":true}
+{"id":"ent-010","category":"entity_swap","a":"How do I invite a user to the organization workspace?","b":"How do I invite a user to the personal workspace?","interchangeable":false,"human_authored":true}
+{"id":"num-001","category":"numeric","a":"What is the rate limit on the 100k plan?","b":"What is the rate limit on the 10k plan?","interchangeable":false,"human_authored":true,"note":"a single character apart"}
+{"id":"num-002","category":"numeric","a":"How long is data retained on the 30-day tier?","b":"How long is data retained on the 90-day tier?","interchangeable":false,"human_authored":true}
+{"id":"num-003","category":"numeric","a":"What is the request timeout on the 30 second setting?","b":"What is the request timeout on the 300 second setting?","interchangeable":false,"human_authored":true}
+{"id":"num-004","category":"numeric","a":"How many concurrent connections does the 5-conn plan allow?","b":"How many concurrent connections does the 50-conn plan allow?","interchangeable":false,"human_authored":true}
+{"id":"num-005","category":"numeric","a":"What is included in the $29 plan?","b":"What is included in the $99 plan?","interchangeable":false,"human_authored":true}
+{"id":"num-006","category":"numeric","a":"What is the max upload size on the 4 MB limit?","b":"What is the max upload size on the 16 MB limit?","interchangeable":false,"human_authored":true}
+{"id":"num-007","category":"numeric","a":"Which port does the service listen on by default, 8080 or something else?","b":"Which port does the service listen on by default, 8081 or something else?","interchangeable":false,"human_authored":true,"note":"awkward phrasing on purpose so the number is the only real difference"}
+{"id":"num-008","category":"numeric","a":"What SLA is guaranteed on the 99.9% tier?","b":"What SLA is guaranteed on the 99.99% tier?","interchangeable":false,"human_authored":true}
+{"id":"num-009","category":"numeric","a":"How large is the batch size on the 100-item setting?","b":"How large is the batch size on the 1000-item setting?","interchangeable":false,"human_authored":true}
+{"id":"num-010","category":"numeric","a":"How many vCPUs are allocated on the 2-core instance?","b":"How many vCPUs are allocated on the 8-core instance?","interchangeable":false,"human_authored":true}
+{"id":"tmp-001","category":"temporal","a":"What changed in release 3.1?","b":"What changed in release 3.2?","interchangeable":false,"human_authored":true}
+{"id":"tmp-002","category":"temporal","a":"Which features shipped in Q1 2026?","b":"Which features shipped in Q2 2026?","interchangeable":false,"human_authored":true}
+{"id":"tmp-003","category":"temporal","a":"What is the pricing as of 2025?","b":"What is the pricing as of 2026?","interchangeable":false,"human_authored":true}
+{"id":"tmp-004","category":"temporal","a":"How do I call the v2 API?","b":"How do I call the v3 API?","interchangeable":false,"human_authored":true}
+{"id":"tmp-005","category":"temporal","a":"What broke in last week's incident?","b":"What broke in this week's incident?","interchangeable":false,"human_authored":true}
+{"id":"tmp-006","category":"temporal","a":"Which endpoints were deprecated in 4.0?","b":"Which endpoints were deprecated in 5.0?","interchangeable":false,"human_authored":true}
+{"id":"tmp-007","category":"temporal","a":"What should I do before the database migration?","b":"What should I do after the database migration?","interchangeable":false,"human_authored":true}
+{"id":"tmp-008","category":"temporal","a":"Where is January's invoice?","b":"Where is February's invoice?","interchangeable":false,"human_authored":true}
+{"id":"tmp-009","category":"temporal","a":"What is in yesterday's changelog?","b":"What is in today's changelog?","interchangeable":false,"human_authored":true}
+{"id":"tmp-010","category":"temporal","a":"Which TLS ciphers were allowed before the April cutoff?","b":"Which TLS ciphers were allowed after the April cutoff?","interchangeable":false,"human_authored":true}
+{"id":"scp-001","category":"scope","a":"Does the audit log apply to trial accounts?","b":"Does the audit log apply to enterprise accounts?","interchangeable":false,"human_authored":true}
+{"id":"scp-002","category":"scope","a":"Is MFA required for admin users?","b":"Is MFA required for read-only users?","interchangeable":false,"human_authored":true}
+{"id":"scp-003","category":"scope","a":"Can I use this feature on public repositories?","b":"Can I use this feature on private repositories?","interchangeable":false,"human_authored":true}
+{"id":"scp-004","category":"scope","a":"Does data residency apply to EU-only workspaces?","b":"Does data residency apply to global workspaces?","interchangeable":false,"human_authored":true}
+{"id":"scp-005","category":"scope","a":"Are refunds available on monthly plans?","b":"Are refunds available on annual plans?","interchangeable":false,"human_authored":true}
+{"id":"scp-006","category":"scope","a":"Can sandbox API keys charge live cards?","b":"Can live API keys charge live cards?","interchangeable":false,"human_authored":true}
+{"id":"scp-007","category":"scope","a":"Is this endpoint available on the internal API?","b":"Is this endpoint available on the customer-facing API?","interchangeable":false,"human_authored":true}
+{"id":"scp-008","category":"scope","a":"Do owners have permission to delete the workspace?","b":"Do members have permission to delete the workspace?","interchangeable":false,"human_authored":true}
+{"id":"scp-009","category":"scope","a":"Is the beta feature covered by the SLA?","b":"Is the GA feature covered by the SLA?","interchangeable":false,"human_authored":true}
+{"id":"scp-010","category":"scope","a":"Does on-call paging fire on weekends?","b":"Does on-call paging fire on weekdays?","interchangeable":false,"human_authored":true}
+{"id":"par-001","category":"paraphrase","a":"How do I reset my password?","b":"What is the process for resetting my password?","interchangeable":true,"human_authored":true}
+{"id":"par-002","category":"paraphrase","a":"Where can I find the invoice for last month?","b":"How do I download last month's invoice?","interchangeable":true,"human_authored":true}
+{"id":"par-003","category":"paraphrase","a":"How do I create a new API key?","b":"What are the steps to generate an API key?","interchangeable":true,"human_authored":true}
+{"id":"par-004","category":"paraphrase","a":"Why is my webhook failing?","b":"What causes webhook delivery failures?","interchangeable":true,"human_authored":true}
+{"id":"par-005","category":"paraphrase","a":"How do I invite a teammate?","b":"How can I add a team member to the workspace?","interchangeable":true,"human_authored":true}
+{"id":"par-006","category":"paraphrase","a":"Where is the audit log?","b":"How do I view audit events?","interchangeable":true,"human_authored":true}
+{"id":"par-007","category":"paraphrase","a":"How do I cancel my subscription?","b":"What is the process for stopping billing?","interchangeable":true,"human_authored":true}
+{"id":"par-008","category":"paraphrase","a":"How do I rotate an expired secret?","b":"What is the procedure for replacing a secret that expired?","interchangeable":true,"human_authored":true}
+{"id":"par-009","category":"paraphrase","a":"How can I increase the rate limit?","b":"How do I raise the API quota?","interchangeable":true,"human_authored":true}
+{"id":"par-010","category":"paraphrase","a":"How do I connect a custom domain?","b":"How can I point my own domain at the app?","interchangeable":true,"human_authored":true}
+{"id":"fmt-001","category":"format_only","a":"list the supported webhook events","b":"Could you please list the supported webhook events?","interchangeable":true,"human_authored":true}
+{"id":"fmt-002","category":"format_only","a":"How do I enable 2FA?","b":"how do i enable 2fa","interchangeable":true,"human_authored":true}
+{"id":"fmt-003","category":"format_only","a":"How do I rotate an API key?","b":"How do I rotate an API key???","interchangeable":true,"human_authored":true}
+{"id":"fmt-004","category":"format_only","a":"What is the refund policy?","b":"What is the refund policy? Thanks!","interchangeable":true,"human_authored":true}
+{"id":"fmt-005","category":"format_only","a":"How do I export logs?","b":"hey, how do I export logs","interchangeable":true,"human_authored":true}
+{"id":"fmt-006","category":"format_only","a":"Where is the status page?","b":"pls where is the status page","interchangeable":true,"human_authored":true}
+{"id":"fmt-007","category":"format_only","a":"How do I delete my account?","b":"How do I  delete   my account?","interchangeable":true,"human_authored":true}
+{"id":"fmt-008","category":"format_only","a":"List available regions.","b":"**List available regions.**","interchangeable":true,"human_authored":true}
+{"id":"fmt-009","category":"format_only","a":"How do I enable SSO?","b":"How do I enable SSO 😊","interchangeable":true,"human_authored":true}
+{"id":"fmt-010","category":"format_only","a":"What are the required headers?","b":"what are the required headers.","interchangeable":true,"human_authored":true}
+{"id":"lng-001","category":"language_switch","a":"How do I enable two-factor authentication?","b":"Как включить двухфакторную аутентификацию?","interchangeable":false,"human_authored":true,"note":"same information need, but serving the cached English answer to a Russian question is a production bug"}
+{"id":"lng-002","category":"language_switch","a":"How do I reset my password?","b":"Как сбросить пароль?","interchangeable":false,"human_authored":true}
+{"id":"lng-003","category":"language_switch","a":"What is the refund policy?","b":"Какая политика возврата средств?","interchangeable":false,"human_authored":true}
+{"id":"lng-004","category":"language_switch","a":"How do I create an API key?","b":"Как создать API-ключ?","interchangeable":false,"human_authored":true}
+{"id":"lng-005","category":"language_switch","a":"Why is my webhook failing?","b":"Почему не доставляется вебхук?","interchangeable":false,"human_authored":true}
+{"id":"lng-006","category":"language_switch","a":"How do I cancel my subscription?","b":"Как отменить подписку?","interchangeable":false,"human_authored":true}
+{"id":"lng-007","category":"language_switch","a":"How do I rotate an API key?","b":"Wie rotiere ich einen API-Schlüssel?","interchangeable":false,"human_authored":true}
+{"id":"lng-008","category":"language_switch","a":"Where can I download last month's invoice?","b":"¿Dónde descargo la factura del mes pasado?","interchangeable":false,"human_authored":true}
+{"id":"lng-009","category":"language_switch","a":"How do I enable SSO?","b":"Comment activer le SSO ?","interchangeable":false,"human_authored":true}
+{"id":"lng-010","category":"language_switch","a":"How do I delete my account?","b":"Как удалить аккаунт?","interchangeable":false,"human_authored":true}

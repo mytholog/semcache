@@ -30,3 +30,9 @@ go.work.sum
 # Editor/IDE
 # .idea/
 # .vscode/
+
+bench/.cache/
+bench/*.csv
+bench/out/*.csv
+bench/.venv/
+bench/**/__pycache__/
