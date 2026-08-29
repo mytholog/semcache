@@ -7,7 +7,7 @@ import (
 	"strings"
 	"unicode"
 
-	"github.com/mytholog/semcache/internal/verify/lingua"
+	"github.com/mytholog/semcache/verify/lingua"
 )
 
 func main() {

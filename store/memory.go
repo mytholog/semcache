@@ -50,7 +50,7 @@ func (m *Memory) Put(_ context.Context, e Entry) error {
 	return nil
 }
 
-func (m *Memory) Lookup(_ context.Context, promptHash string, vec []float32, k int) ([]Candidate, error) {
+func (m *Memory) Lookup(_ context.Context, namespace, promptHash string, vec []float32, k int) ([]Candidate, error) {
 	if k <= 0 {
 		return nil, nil
 	}
@@ -64,7 +64,7 @@ func (m *Memory) Lookup(_ context.Context, promptHash string, vec []float32, k i
 	now := time.Now()
 	for _, id := range m.byHash[promptHash] {
 		e, ok := m.entries[id]
-		if !ok || expired(e, now) {
+		if !ok || e.Namespace != namespace || expired(e, now) {
 			continue
 		}
 		out = append(out, Candidate{Entry: cloneEntry(e), Score: 1})
@@ -83,7 +83,7 @@ func (m *Memory) Lookup(_ context.Context, promptHash string, vec []float32, k i
 		if _, ok := seen[id]; ok {
 			continue
 		}
-		if expired(e, now) {
+		if e.Namespace != namespace || expired(e, now) {
 			continue
 		}
 		rest = append(rest, scored{id: id, score: cosine(vec, e.Vector)})

@@ -7,13 +7,14 @@ import (
 	"math"
 	"math/rand/v2"
 	"os"
+	"path/filepath"
 	"slices"
 	"sort"
 	"text/tabwriter"
 	"time"
 
 	"github.com/mytholog/semcache/internal/dataset"
-	"github.com/mytholog/semcache/internal/store"
+	"github.com/mytholog/semcache/store"
 )
 
 // corpusEntry — одна запись кэша в демо: промпт, вектор и теги-зависимости.
@@ -118,7 +119,7 @@ func runInvalidate(ctx context.Context, cfg config) error {
 			slog.Error("failed to re-enable autovacuum", "error", err)
 		}
 	}()
-	scan, plan, err := pg.ScanMethod(ctx, queries[0].Vector, cfg.k)
+	scan, plan, err := pg.ScanMethod(ctx, "", queries[0].Vector, cfg.k)
 	if err != nil {
 		return err
 	}
@@ -219,11 +220,31 @@ func runInvalidate(ctx context.Context, cfg config) error {
 		afterVacuum: afterVacuum,
 	})
 
+	svgPath := filepath.Join(cfg.outDir, "invalidation-recall.svg")
+	err = writeRecallSVG(svgPath, []recallLine{
+		recallOf("eager tagged DELETE", eager),
+		recallOf("TTL + iterative scan", lazyIter),
+		recallOf("TTL only", lazy),
+	}, cfg.k)
+	if err != nil {
+		return err
+	}
+	slog.Info("plot written", "path", svgPath)
+
 	if cfg.pgKeep {
 		slog.Info("leaving the corpus in place", "schema", cfg.pgSchema)
 		return nil
 	}
 	return pg.Truncate(ctx)
+}
+
+func recallOf(name string, scenarios []scenario) recallLine {
+	line := recallLine{name: name}
+	for _, s := range scenarios {
+		line.shares = append(line.shares, s.deadShare)
+		line.recall = append(line.recall, s.recall)
+	}
+	return line
 }
 
 // markDead доводит долю мёртвых записей до share. Инкрементально: документы
@@ -404,7 +425,7 @@ func measure(ctx context.Context, pg *store.Postgres, corpus []corpusEntry, quer
 	// Прогрев: первый запрос после смены состояния платит за холодные
 	// страницы индекса, и в среднем это даёт десятки миллисекунд шума.
 	for _, q := range queries[:min(20, len(queries))] {
-		if _, err := pg.Lookup(ctx, "", q.Vector, k); err != nil {
+		if _, err := pg.Lookup(ctx, "", "", q.Vector, k); err != nil {
 			return scenario{}, err
 		}
 	}
@@ -419,7 +440,7 @@ func measure(ctx context.Context, pg *store.Postgres, corpus []corpusEntry, quer
 
 		start := time.Now()
 		// Пустой хеш промпта: точное совпадение не должно подменять ANN-поиск.
-		got, err := pg.Lookup(ctx, "", q.Vector, k)
+		got, err := pg.Lookup(ctx, "", "", q.Vector, k)
 		latencies = append(latencies, time.Since(start))
 		if err != nil {
 			return scenario{}, err
@@ -441,7 +462,7 @@ func measure(ctx context.Context, pg *store.Postgres, corpus []corpusEntry, quer
 	if err != nil {
 		return scenario{}, err
 	}
-	scan, _, err := pg.ScanMethod(ctx, queries[0].Vector, k)
+	scan, _, err := pg.ScanMethod(ctx, "", queries[0].Vector, k)
 	if err != nil {
 		return scenario{}, err
 	}

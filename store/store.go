@@ -18,6 +18,12 @@ type Entry struct {
 	Payload string
 	Tags    []string
 
+	// Namespace изолирует записи, которые нельзя путать между собой, даже
+	// если промпты взаимозаменяемы: разные модели, разные версии шаблона,
+	// разные арендаторы. Ответ модели A на запрос к модели B — не попадание
+	// кэша, а подмена.
+	Namespace string
+
 	// Lang — язык ответа, определённый при записи по полному тексту. Гейт
 	// второй стадии на коротком запросе языка не знает; записанный язык знает.
 	Lang string
@@ -42,9 +48,10 @@ func expired(e Entry, now time.Time) bool {
 // Store владеет записями, векторами и тегами вместе: инвалидация должна
 // убирать вектор в той же операции, что и payload.
 type Store interface {
-	// Lookup никогда не возвращает истёкшие записи. Вектор в кандидате
-	// возвращать не обязан: попадание кэша отдаёт payload.
-	Lookup(ctx context.Context, promptHash string, vec []float32, k int) ([]Candidate, error)
+	// Lookup ищет только внутри namespace и никогда не возвращает истёкшие
+	// записи. Вектор в кандидате возвращать не обязан: попадание кэша отдаёт
+	// payload.
+	Lookup(ctx context.Context, namespace, promptHash string, vec []float32, k int) ([]Candidate, error)
 	Put(ctx context.Context, e Entry) error
 	InvalidateTags(ctx context.Context, tags []string) (removed int, err error)
 }

@@ -14,7 +14,7 @@ import (
 	"text/tabwriter"
 
 	"github.com/mytholog/semcache/internal/dataset"
-	"github.com/mytholog/semcache/internal/verify"
+	"github.com/mytholog/semcache/verify"
 	"golang.org/x/sync/errgroup"
 )
 

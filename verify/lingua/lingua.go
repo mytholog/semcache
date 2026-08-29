@@ -6,6 +6,7 @@
 package lingua
 
 import (
+	"strings"
 	"sync"
 
 	lingua "github.com/pemistahl/lingua-go"
@@ -37,6 +38,10 @@ type Comparer struct {
 	// на v1 (`make verify-study`).
 	MaxCross float64
 
+	// byISO — только языки из набора: про остальные Comparer ничего не знает
+	// и утверждать о них не должен.
+	byISO map[string]lingua.Language
+
 	mu    sync.Mutex
 	cache map[string]topResult
 }
@@ -66,6 +71,10 @@ func New(languages []lingua.Language) *Comparer {
 	if len(languages) == 0 {
 		languages = DefaultLanguages
 	}
+	byISO := make(map[string]lingua.Language, len(languages))
+	for _, l := range languages {
+		byISO[iso(l)] = l
+	}
 	return &Comparer{
 		detector: lingua.NewLanguageDetectorBuilder().
 			FromLanguages(languages...).
@@ -73,8 +82,13 @@ func New(languages []lingua.Language) *Comparer {
 			Build(),
 		MinMargin: 0.30,
 		MaxCross:  0.15,
+		byISO:     byISO,
 		cache:     make(map[string]topResult),
 	}
+}
+
+func iso(l lingua.Language) string {
+	return strings.ToLower(l.IsoCode639_1().String())
 }
 
 // SameLanguage уверен только в отрицательном ответе: гейт действует лишь по
@@ -112,13 +126,30 @@ func (c *Comparer) notLanguage(text string, lang lingua.Language) bool {
 	return c.detector.ComputeLanguageConfidence(text, lang) <= c.MaxCross
 }
 
-// Detect возвращает ISO 639-1 верхнего языка — для отчётов и отладки.
+// Detect возвращает ISO 639-1 верхнего языка в нижнем регистре. Второе
+// значение говорит, можно ли этому ответу верить: на длинном тексте можно,
+// на запросе из двух слов обычно нет.
 func (c *Comparer) Detect(text string) (string, bool) {
 	lang, margin := c.top(text)
 	if lang == lingua.Unknown {
 		return "", false
 	}
-	return lang.IsoCode639_1().String(), margin >= c.MinMargin
+	return iso(lang), margin >= c.MinMargin
+}
+
+// NotLanguage сообщает, что текст уверенно написан не на языке lang.
+//
+// Это вторая половина гейта, которая работает там, где SameLanguage
+// отказывается: у кэшированной записи язык известен точно — он определён при
+// записи по полному тексту ответа, где сигнала достаточно, — и остаётся
+// единственный вопрос, может ли короткий входящий запрос быть на том же
+// языке. Про язык не из набора Comparer ничего не утверждает.
+func (c *Comparer) NotLanguage(text, lang string) bool {
+	l, ok := c.byISO[strings.ToLower(lang)]
+	if !ok {
+		return false
+	}
+	return c.notLanguage(text, l)
 }
 
 // Cross возвращает вероятность языка второй строки для первой и наоборот —
@@ -143,7 +174,7 @@ func (c *Comparer) Spread(text string) (lang string, top, margin float64) {
 	if len(values) > 1 {
 		margin = values[0].Value() - values[1].Value()
 	}
-	return values[0].Language().IsoCode639_1().String(), top, margin
+	return iso(values[0].Language()), top, margin
 }
 
 func (c *Comparer) top(text string) (lingua.Language, float64) {

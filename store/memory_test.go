@@ -50,7 +50,7 @@ func TestMemoryLookupExactHashBeatsNearerNeighbour(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	got, err := m.Lookup(ctx, "want", vec(1, 0), 2)
+	got, err := m.Lookup(ctx, "", "want", vec(1, 0), 2)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -74,7 +74,7 @@ func TestMemoryLookupANNOrder(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	got, err := m.Lookup(ctx, "missing", vec(1, 0), 1)
+	got, err := m.Lookup(ctx, "", "missing", vec(1, 0), 1)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -107,7 +107,7 @@ func TestMemoryInvalidateTagsRemovesVector(t *testing.T) {
 		t.Errorf("removed = %d, want 1", removed)
 	}
 
-	got, err := m.Lookup(ctx, "h1", vec(1, 0), 5)
+	got, err := m.Lookup(ctx, "", "h1", vec(1, 0), 5)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -131,7 +131,7 @@ func TestMemoryLookupCopiesEntry(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	got, err := m.Lookup(ctx, "h", vec(1, 0), 1)
+	got, err := m.Lookup(ctx, "", "h", vec(1, 0), 1)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -139,7 +139,7 @@ func TestMemoryLookupCopiesEntry(t *testing.T) {
 	got[0].Vector[0] = 0
 	got[0].Tags[0] = "x"
 
-	again, err := m.Lookup(ctx, "h", vec(1, 0), 1)
+	again, err := m.Lookup(ctx, "", "h", vec(1, 0), 1)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -164,7 +164,7 @@ func TestSingleflightCoalescesLoader(t *testing.T) {
 	errCh := make(chan error, 16)
 	for range 16 {
 		wg.Go(func() {
-			_, _, err := g.GetOrLoad(ctx, "same", vec(1, 0), load)
+			_, _, err := g.GetOrLoad(ctx, "", "same", vec(1, 0), load)
 			errCh <- err
 		})
 	}

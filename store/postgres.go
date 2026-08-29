@@ -3,6 +3,7 @@ package store
 import (
 	"context"
 	_ "embed"
+	"errors"
 	"fmt"
 	"slices"
 	"strconv"
@@ -133,11 +134,41 @@ func (p *Postgres) Migrate(ctx context.Context) error {
 	if _, err := tx.Exec(ctx, sql); err != nil {
 		return fmt.Errorf("apply schema: %w", err)
 	}
+
+	// Размерность проверяется отдельно: create table if not exists молча
+	// принимает таблицу, созданную под другую модель, и тогда ошибка вылезет
+	// только на первой записи — асинхронной, то есть в логе, а не в ответе.
+	if err := checkDims(ctx, tx, p.dims); err != nil {
+		return err
+	}
 	if err := tx.Commit(ctx); err != nil {
 		return fmt.Errorf("commit migrate: %w", err)
 	}
 	return nil
 }
+
+func checkDims(ctx context.Context, tx pgx.Tx, want int) error {
+	const q = `
+		select a.atttypmod, format_type(a.atttypid, a.atttypmod)
+		from pg_attribute a
+		where a.attrelid = 'entries'::regclass and a.attname = 'embedding'`
+
+	var (
+		got  int
+		kind string
+	)
+	if err := tx.QueryRow(ctx, q).Scan(&got, &kind); err != nil {
+		return fmt.Errorf("read embedding dimensions: %w", err)
+	}
+	if got != want {
+		return fmt.Errorf("%w: table entries stores %s, but this process embeds %d dimensions; "+
+			"point it at another schema or migrate the existing rows", ErrDimsMismatch, kind, want)
+	}
+	return nil
+}
+
+// ErrDimsMismatch — таблица создана под другую модель эмбеддингов.
+var ErrDimsMismatch = errors.New("embedding dimensions do not match the schema")
 
 // DropSchema убирает схему целиком — для тестов, которые работают в своей.
 func (p *Postgres) DropSchema(ctx context.Context) error {
@@ -176,17 +207,7 @@ func (p *Postgres) Put(ctx context.Context, e Entry) error {
 	if !e.ExpiresAt.IsZero() {
 		expires = e.ExpiresAt
 	}
-	const upsert = `
-		insert into entries (id, prompt_hash, prompt, payload, lang, embedding, expires_at)
-		values ($1, $2, $3, $4, $5, $6, $7)
-		on conflict (id) do update set
-			prompt_hash = excluded.prompt_hash,
-			prompt      = excluded.prompt,
-			payload     = excluded.payload,
-			lang        = excluded.lang,
-			embedding   = excluded.embedding,
-			expires_at  = excluded.expires_at`
-	if _, err := tx.Exec(ctx, upsert, e.ID, e.Hash, e.Prompt, e.Payload, e.Lang, vectorLiteral(e.Vector), expires); err != nil {
+	if _, err := tx.Exec(ctx, upsertSQL, e.ID, e.Hash, e.Prompt, e.Payload, e.Lang, vectorLiteral(e.Vector), expires, e.Namespace); err != nil {
 		return fmt.Errorf("upsert entry: %w", err)
 	}
 
@@ -210,6 +231,18 @@ func (p *Postgres) Put(ctx context.Context, e Entry) error {
 	}
 	return nil
 }
+
+const upsertSQL = `
+	insert into entries (id, prompt_hash, prompt, payload, lang, embedding, expires_at, namespace)
+	values ($1, $2, $3, $4, $5, $6, $7, $8)
+	on conflict (id) do update set
+		prompt_hash = excluded.prompt_hash,
+		prompt      = excluded.prompt,
+		payload     = excluded.payload,
+		lang        = excluded.lang,
+		embedding   = excluded.embedding,
+		expires_at  = excluded.expires_at,
+		namespace   = excluded.namespace`
 
 // PutBatch заливает записи пачками в одной транзакции на пачку. Нужен
 // бенчам и первичному прогреву кэша: отдельная транзакция на запись
@@ -240,17 +273,7 @@ func (p *Postgres) putChunk(ctx context.Context, entries []Entry) error {
 		if !e.ExpiresAt.IsZero() {
 			expires = e.ExpiresAt
 		}
-		b.Queue(`
-			insert into entries (id, prompt_hash, prompt, payload, lang, embedding, expires_at)
-			values ($1, $2, $3, $4, $5, $6, $7)
-			on conflict (id) do update set
-				prompt_hash = excluded.prompt_hash,
-				prompt      = excluded.prompt,
-				payload     = excluded.payload,
-				lang        = excluded.lang,
-				embedding   = excluded.embedding,
-				expires_at  = excluded.expires_at`,
-			e.ID, e.Hash, e.Prompt, e.Payload, e.Lang, vectorLiteral(e.Vector), expires)
+		b.Queue(upsertSQL, e.ID, e.Hash, e.Prompt, e.Payload, e.Lang, vectorLiteral(e.Vector), expires, e.Namespace)
 		b.Queue("delete from entry_tags where entry_id = $1", e.ID)
 		if len(e.Tags) > 0 {
 			b.Queue(`
@@ -287,7 +310,8 @@ const lookupSQL = `
 		select id, prompt_hash, prompt, payload, lang, expires_at,
 		       1.0::float8 as score, 0 as src
 		from entries
-		where prompt_hash = $2 and (expires_at is null or expires_at > now())
+		where namespace = $4 and prompt_hash = $2
+		  and (expires_at is null or expires_at > now())
 		limit $3
 	)
 	union all
@@ -295,7 +319,7 @@ const lookupSQL = `
 		select id, prompt_hash, prompt, payload, lang, expires_at,
 		       1 - (embedding <=> $1::vector) as score, 1 as src
 		from entries
-		where expires_at is null or expires_at > now()
+		where namespace = $4 and (expires_at is null or expires_at > now())
 		order by embedding <=> $1::vector
 		limit $3
 	)
@@ -308,7 +332,7 @@ const lookupSQL = `
 // Вектор кандидата не возвращается: попадание кэша отдаёт payload, а не
 // эмбеддинг, и тащить по 1536 float на каждого кандидата — это десятки
 // килобайт на запрос ради данных, которые никто не читает.
-func (p *Postgres) Lookup(ctx context.Context, promptHash string, vec []float32, k int) ([]Candidate, error) {
+func (p *Postgres) Lookup(ctx context.Context, namespace, promptHash string, vec []float32, k int) ([]Candidate, error) {
 	if k <= 0 {
 		return nil, nil
 	}
@@ -316,7 +340,7 @@ func (p *Postgres) Lookup(ctx context.Context, promptHash string, vec []float32,
 		return nil, fmt.Errorf("%w: query vector has %d dims, store expects %d", ErrInvalidEntry, len(vec), p.dims)
 	}
 
-	rows, err := p.pool.Query(ctx, lookupSQL, vectorLiteral(vec), promptHash, k)
+	rows, err := p.pool.Query(ctx, lookupSQL, vectorLiteral(vec), promptHash, k, namespace)
 	if err != nil {
 		return nil, fmt.Errorf("lookup: %w", err)
 	}
@@ -333,6 +357,7 @@ func (p *Postgres) Lookup(ctx context.Context, promptHash string, vec []float32,
 		if err := rows.Scan(&c.ID, &c.Hash, &c.Prompt, &c.Payload, &c.Lang, &expires, &c.Score, &src); err != nil {
 			return nil, fmt.Errorf("scan candidate: %w", err)
 		}
+		c.Namespace = namespace
 		if _, dup := seen[c.ID]; dup {
 			continue
 		}
@@ -355,8 +380,9 @@ func (p *Postgres) Lookup(ctx context.Context, promptHash string, vec []float32,
 // проверка «используется ли индекс» проверяет не то: на маленькой таблице
 // планировщик берёт Seq Scan с точной сортировкой, и бенч измеряет полный
 // перебор с идеальным recall, который в продакшне не воспроизведётся.
-func (p *Postgres) ExplainLookup(ctx context.Context, vec []float32, k int) (string, error) {
-	rows, err := p.pool.Query(ctx, "explain (analyze, buffers) "+lookupSQL, vectorLiteral(vec), "explain-no-such-hash", k)
+func (p *Postgres) ExplainLookup(ctx context.Context, namespace string, vec []float32, k int) (string, error) {
+	rows, err := p.pool.Query(ctx, "explain (analyze, buffers) "+lookupSQL,
+		vectorLiteral(vec), "explain-no-such-hash", k, namespace)
 	if err != nil {
 		return "", fmt.Errorf("explain lookup: %w", err)
 	}
@@ -378,8 +404,8 @@ func (p *Postgres) ExplainLookup(ctx context.Context, vec []float32, k int) (str
 // только «использован ли HNSW» недостаточно: у планировщика есть третий
 // вариант — bitmap-скан по другому индексу, и он выглядит как идеальный
 // recall, хотя означает, что векторный индекс обойдён.
-func (p *Postgres) ScanMethod(ctx context.Context, vec []float32, k int) (method, plan string, err error) {
-	plan, err = p.ExplainLookup(ctx, vec, k)
+func (p *Postgres) ScanMethod(ctx context.Context, namespace string, vec []float32, k int) (method, plan string, err error) {
+	plan, err = p.ExplainLookup(ctx, namespace, vec, k)
 	if err != nil {
 		return "", "", err
 	}

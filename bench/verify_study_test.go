@@ -3,7 +3,7 @@ package main
 import (
 	"testing"
 
-	"github.com/mytholog/semcache/internal/verify"
+	"github.com/mytholog/semcache/verify"
 )
 
 func TestSweepVerifierAppliesRetrieveThenScore(t *testing.T) {

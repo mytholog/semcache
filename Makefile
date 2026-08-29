@@ -1,5 +1,14 @@
-.PHONY: pilot study study-local verify-study langprobe genv1 csv verify fmt vet test race tidy \
+.PHONY: run bench pilot study study-local verify-study langprobe genv1 csv verify fmt vet test race tidy \
 	pg-up pg-down pg-test invalidate-study
+
+# Прокси с кэшем в памяти процесса: чтобы посмотреть, как он себя ведёт,
+# ничего кроме ключа не нужно.
+run:
+	go run ./cmd/semcached
+
+# Все числа из README за один прогон. Порядок тот же, что у этапов: порог
+# косинуса, вторая стадия, инвалидация.
+bench: study verify-study invalidate-study
 
 pilot:
 	go run ./bench -dataset bench/dataset/pilot.jsonl -models text-embedding-3-small
@@ -37,7 +46,7 @@ pg-down:
 	docker stop semcache-pg
 
 pg-test: pg-up
-	SEMCACHE_TEST_DSN='$(PG_DSN)' go test -race -count=1 ./internal/store/...
+	SEMCACHE_TEST_DSN='$(PG_DSN)' go test -race -count=1 ./store/...
 
 # Демо инвалидации: eager DELETE по тегу против TTL-подхода.
 invalidate-study: pg-up

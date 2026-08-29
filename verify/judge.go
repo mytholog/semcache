@@ -44,6 +44,10 @@ type Judge struct {
 	CacheDir string
 	PricePer float64 // USD за миллион токенов, грубая оценка
 
+	// MaxMemo — предел памяти решений. Ноль означает «без предела», что
+	// годится для прогона бенча и не годится для сервера.
+	MaxMemo int
+
 	mu    sync.Mutex
 	mem   map[string]judged
 	group singleflight.Group
@@ -63,8 +67,18 @@ type judged struct {
 	tokens   int
 }
 
+// DefaultMaxMemo ограничивает память решений: в долгоживущем процессе карта
+// без предела — это утечка.
+const DefaultMaxMemo = 10_000
+
 func NewJudge(c Completer, cacheDir string) *Judge {
-	return &Judge{Complete: c, CacheDir: cacheDir, PricePer: 0.20, mem: make(map[string]judged)}
+	return &Judge{
+		Complete: c,
+		CacheDir: cacheDir,
+		PricePer: 0.20,
+		MaxMemo:  DefaultMaxMemo,
+		mem:      make(map[string]judged),
+	}
 }
 
 func (j *Judge) Interchangeable(ctx context.Context, incoming, cached string) (Decision, error) {
@@ -134,6 +148,12 @@ func (j *Judge) complete(ctx context.Context, key, incoming, cached string) (Dec
 	j.Calls++
 	j.Tokens += tokens
 	j.SpentTokens += tokens
+	// Сброс целиком вместо вытеснения по возрасту: память экономит только
+	// повторные пары в пределах короткого окна, для этого точность
+	// вытеснения не нужна, а дисковый кэш остаётся на месте.
+	if j.MaxMemo > 0 && len(j.mem) >= j.MaxMemo {
+		j.mem = make(map[string]judged, j.MaxMemo)
+	}
 	j.mem[key] = judged{decision: d, tokens: tokens}
 	j.mu.Unlock()
 

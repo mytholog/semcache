@@ -18,8 +18,8 @@ func NewGroup(s Store) *Group {
 
 // GetOrLoad сначала ищет точное совпадение хеша. При промахе loader
 // вызывается один раз на хеш, даже если запросы пришли пачкой.
-func (g *Group) GetOrLoad(ctx context.Context, promptHash string, vec []float32, loader func(context.Context) (Entry, error)) (Entry, bool, error) {
-	hits, err := g.store.Lookup(ctx, promptHash, vec, 1)
+func (g *Group) GetOrLoad(ctx context.Context, namespace, promptHash string, vec []float32, loader func(context.Context) (Entry, error)) (Entry, bool, error) {
+	hits, err := g.store.Lookup(ctx, namespace, promptHash, vec, 1)
 	if err != nil {
 		return Entry{}, false, err
 	}
@@ -27,9 +27,11 @@ func (g *Group) GetOrLoad(ctx context.Context, promptHash string, vec []float32,
 		return hits[0].Entry, true, nil
 	}
 
-	v, err, _ := g.sf.Do(promptHash, func() (any, error) {
+	// Ключ включает namespace: одинаковый промпт к разным моделям — это два
+	// разных промаха, сворачивать их в один нельзя.
+	v, err, _ := g.sf.Do(namespace+"\x00"+promptHash, func() (any, error) {
 		// Повторная проверка после входа в singleflight: сосед мог уже положить запись.
-		hits, err := g.store.Lookup(ctx, promptHash, vec, 1)
+		hits, err := g.store.Lookup(ctx, namespace, promptHash, vec, 1)
 		if err != nil {
 			return nil, err
 		}
@@ -42,6 +44,9 @@ func (g *Group) GetOrLoad(ctx context.Context, promptHash string, vec []float32,
 		}
 		if e.Hash == "" {
 			e.Hash = promptHash
+		}
+		if e.Namespace == "" {
+			e.Namespace = namespace
 		}
 		if err := g.store.Put(ctx, e); err != nil {
 			return nil, err

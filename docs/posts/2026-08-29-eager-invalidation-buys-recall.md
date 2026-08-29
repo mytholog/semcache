@@ -11,27 +11,31 @@ The answer is that the claim is true, larger than expected at the tail, and smal
 
 ## Result
 
-One `DELETE` by tag removed 19,800 entries and their 39,600 tag rows in **948 ms**. Recall@5 is measured against exact brute force over the same live set, so 1.000 means the index found everything a full scan would:
+One `DELETE` by tag removed 19,800 entries and their 39,600 tag rows in **1.1 s**. Recall@5 is measured against exact brute force over the same live set, so 1.000 means the index found everything a full scan would:
 
 | Dead share | Live entries | `DELETE` | `DELETE` + `VACUUM` | TTL only | TTL + iterative scan |
 |---|---|---|---|---|---|
-| 25% | 15,000 | 0.839 | 0.898 | 0.811 | 0.811 |
-| 50% | 10,000 | 0.899 | 0.913 | 0.813 | 0.813 |
-| 75% | 5,000 | 0.914 | 0.954 | 0.812 | 0.815 |
-| 90% | 2,000 | 0.952 | 0.996 | **0.561** | 0.722 |
-| 95% | 1,000 | 0.995 | 0.998 | **0.317** | 0.668 |
-| 99% | 200 | 0.982 | **1.000** | **0.073** | 0.761 |
+| 25% | 15,000 | 0.894 | 0.934 | 0.858 | 0.858 |
+| 50% | 10,000 | 0.934 | 0.955 | 0.871 | 0.871 |
+| 75% | 5,000 | 0.955 | 0.964 | 0.864 | 0.866 |
+| 90% | 2,000 | 0.962 | 0.994 | **0.601** | 0.767 |
+| 95% | 1,000 | 0.993 | 0.998 | **0.342** | 0.692 |
+| 99% | 200 | 0.979 | **1.000** | **0.076** | 0.728 |
 
-The intact cache scores 0.815 — that is HNSW at the default `ef_search = 40` on a corpus deliberately full of near-duplicates, not a bug. Eager deletion tracks or beats that line everywhere and reaches 1.000 as the live set shrinks, because fewer entries means less for the graph to get wrong.
+The intact cache scores 0.862 — that is HNSW at the default `ef_search = 40` on a corpus deliberately full of near-duplicates, not a bug. Eager deletion tracks or beats that line everywhere and reaches 1.000 as the live set shrinks, because fewer entries means less for the graph to get wrong.
+
+![recall@5 against the share of invalidated entries](../../bench/out/invalidation-recall.svg)
+
+Digits move between runs: the graph is built in a different order each time, and the intact baseline has landed anywhere from 0.778 to 0.862 across four rebuilds of the same corpus. Read the columns against each other within a run, not across runs. The gap TTL opens up past 90% dead — half the recall, an order of magnitude fewer candidates — is the part that reproduces every time.
 
 TTL holds up while dead entries are a minority and then falls off a cliff. The more legible number is how many candidates come back at all, out of the five requested:
 
 | Dead share | `DELETE` | TTL only | TTL + iterative scan |
 |---|---|---|---|
-| 75% | 5.00 | 4.95 | 5.00 |
-| 90% | 5.00 | 3.33 | 4.97 |
-| 95% | 5.00 | 1.79 | 4.95 |
-| 99% | 5.00 | **0.39** | 4.93 |
+| 75% | 5.00 | 4.94 | 5.00 |
+| 90% | 5.00 | 3.36 | 4.98 |
+| 95% | 5.00 | 1.83 | 4.97 |
+| 99% | 4.94 | **0.39** | 4.95 |
 
 At 99% dead, a cache with 200 perfectly good live entries answers 0.39 candidates per lookup. It is not returning stale answers — the store filters those out unconditionally, so a hit is never wrong — it is returning *nothing*, having walked a graph of 20,000 nodes of which 19,800 are corpses. The cost of lazy invalidation is not staleness. It is that the cache quietly stops being a cache.
 
@@ -39,17 +43,19 @@ This is the shape the design doc named as the realistic worst case: a document r
 
 ## The counter-argument, measured
 
-pgvector 0.8 added iterative index scans for exactly this problem: when the filter rejects too much, keep pulling from the graph instead of returning short. It works — recall recovers from 0.073 to 0.761 at 99% dead, and candidate count from 0.39 to 4.93.
+pgvector 0.8 added iterative index scans for exactly this problem: when the filter rejects too much, keep pulling from the graph instead of returning short. It works — recall recovers from 0.076 to 0.728 at 99% dead, and candidate count from 0.39 to 4.95.
 
-It does not close the gap. Median latency stays at ~1 ms for eager deletion at every dead share, while the iterative scan pays for the extra traversal: 1.3 ms at 90% dead, 1.5 ms at 95%, **2.9 ms at 99%** — 2.7× the eager path, for recall that is still 24 points worse. And it is a read-side mitigation for a write-side problem: every lookup forever pays to walk around garbage that one `DELETE` would have removed once.
+It does not close the gap. Median latency stays at ~1.2 ms for eager deletion at every dead share, while the iterative scan pays for the extra traversal: 1.4 ms at 90% dead, 1.7 ms at 95%, **3.0 ms at 99%** — 2.5× the eager path, for recall that is still 25 points worse. And it is a read-side mitigation for a write-side problem: every lookup forever pays to walk around garbage that one `DELETE` would have removed once.
 
-## Three ways to lose the index without noticing
+## Four ways to lose the index without noticing
 
-All three of these produced clean, plausible, wrong benchmark tables before being found. Each one returned correct answers, which is why none of them announced itself.
+All four of these produced clean, plausible, wrong benchmark tables before being found. Each one returned correct answers, which is why none of them announced itself.
 
 **A CTE that gets materialized.** The lookup serves both cache layers in one round trip — exact `prompt_hash` match and ANN candidates — so the liveness filter started life as a shared CTE referenced by both branches of a `UNION ALL`. Postgres materializes a CTE referenced more than once, and a materialized CTE has no index. The ANN branch silently became a full scan with an exact sort: same rows, 200× the latency, and a recall of exactly 1.000 that looks like a triumph. The condition is now repeated in both branches, with a comment saying why the tidier version is wrong.
 
 **An index on the TTL column.** `create index on entries (expires_at)` is the obvious companion to a TTL filter, and it hands the planner an escape route: fetch every live row by bitmap scan, then sort exactly, bypassing HNSW entirely. 110 ms instead of 1 ms, again with perfect recall. The schema now carries a `drop index` for it and an explanation.
+
+**An index that happens to cover the filter.** Added later, when entries gained a `namespace` so that one model's answer is never served for another's request, this one is the same trap wearing different clothes. An index on `(namespace, prompt_hash)` is the obvious support for the exact-hash lookup — and because `namespace` is low-cardinality and appears in the ANN branch's `WHERE`, the planner used it to bitmap-scan every matching row and sort exactly: 114 ms instead of 1.2 ms, perfect recall, no HNSW. Reversing the columns to `(prompt_hash, namespace)` did not help; the planner reached the same place through a full index scan, and it dragged the TTL columns into bitmap plans too, which quietly inflated *their* recall in the table. The index is now on `prompt_hash` alone. The rule, learned three times: any btree that can satisfy the ANN branch's filter is an escape route around the vector index, and `prompt_hash` is selective enough that `namespace` can be checked on the heap.
 
 **A verification that checks a different query.** The bench asserted "the plan uses the HNSW index" against a hand-written simplification of the lookup, not the lookup itself. It reported `true` while the real query was doing a sequential scan. `ExplainLookup` now runs `EXPLAIN` on the exact same SQL constant that `Lookup` executes, and the study prints the access method for every row of every table, because `hnsw` versus `bitmap` is the difference between measuring ANN behaviour and measuring nothing.
 
@@ -61,18 +67,20 @@ The design doc promised a demo showing "that the index shrank accordingly". It d
 
 | State | Rows | HNSW index |
 |---|---|---|
-| Before invalidation | 20,000 | 172.2 MB |
-| After deleting 99% and `VACUUM` | 200 | 172.2 MB |
+| Before invalidation | 20,000 | 168.5 MB |
+| After deleting 99% and `VACUUM` | 200 | 168.5 MB |
 
 `VACUUM` removes the deleted tuples from the graph and marks their pages reusable, which is what restores recall to 1.000. It does not return the pages to the filesystem — that needs `VACUUM FULL` or a `REINDEX`, both of which take an `ACCESS EXCLUSIVE` lock, and neither belongs on an invalidation path. So the honest claim is narrower than the design doc's and more useful: eager invalidation buys back **recall and latency**, not bytes. The index keeps its high-water mark, and the freed space is reused by the next writes.
 
-`VACUUM` is also not free: 1 m 20 s across the six increments, against 948 ms for all the `DELETE`s. Recall is already near-perfect on the un-vacuumed path (0.952 at 90% dead vs 0.996 after), so vacuuming is a background chore, not part of the transaction — but it is the step that actually reclaims the graph, and leaving it to autovacuum's defaults after a bulk invalidation is a decision, not a default.
+`VACUUM` is also not free: 1 m 20 s across the six increments, against 1.1 s for all the `DELETE`s. Recall is already near-perfect on the un-vacuumed path (0.962 at 90% dead vs 0.994 after), so vacuuming is a background chore, not part of the transaction — but it is the step that actually reclaims the graph, and leaving it to autovacuum's defaults after a bulk invalidation is a decision, not a default.
 
 ## What is in the store
 
 `entries(id, prompt_hash, prompt, payload, lang, embedding, created_at, expires_at)` plus `entry_tags(entry_id, tag)` with `on delete cascade`, which is what makes the invalidation atomic for free: one `DELETE` on `entries` takes the payload, the vector and the tags in one transaction, and there is no window where a candidate exists without its answer.
 
-The `lang` column is the debt M2 left. The language gate closes 17 of 24 `language_switch` false hits, and the 7 survivors are all short English queries where no detector can be confident. The fix is not a better guess at the language of a five-word query but to stop guessing: `lang` is written once, from the full answer text, where there is enough signal. Wiring it into the gate is M4, since it needs the gateway to say what it wants.
+The `lang` column is the debt M2 left. The language gate closes 17 of 24 `language_switch` false hits, and the 7 survivors are all short English queries where no detector can be confident. The fix is not a better guess at the language of a five-word query but to stop guessing: `lang` is written once, from the full answer text, where there is enough signal. It is now [wired into the retrieval loop](2026-08-29-a-cache-in-front-of-a-real-api.md), though its effect is not measured — v1 has prompts and labels, not answers.
+
+`namespace` arrived with the proxy, for the same reason as tags but a different mechanism: tags decide what to invalidate, `namespace` decides what may be compared at all. An answer from one model is not a candidate for another model's request.
 
 Two smaller things worth keeping:
 
@@ -81,12 +89,13 @@ Two smaller things worth keeping:
 
 ## Caveats
 
-- **Padded corpus.** 434 real prompts is far too few for the planner to prefer an index, so the corpus is padded to 20,000 with Gaussian perturbations of real vectors. That is a fair model of a cache full of near-duplicates, and it is why the intact baseline is 0.815 rather than ~1.0: the top-5 is genuinely crowded. It is not a claim about behaviour at 10⁶ entries.
-- **Not a latency benchmark.** Medians on a laptop Docker container with `enable_seqscan = off` and autovacuum disabled. The ~1 ms figure is a floor for comparison between states, not a production number.
+- **Padded corpus.** 434 real prompts is far too few for the planner to prefer an index, so the corpus is padded to 20,000 with Gaussian perturbations of real vectors. That is a fair model of a cache full of near-duplicates, and it is why the intact baseline is 0.862 rather than ~1.0: the top-5 is genuinely crowded. It is not a claim about behaviour at 10⁶ entries.
+- **Not a latency benchmark.** Medians on a laptop Docker container with `enable_seqscan = off` and autovacuum disabled. The ~1.2 ms figure is a floor for comparison between states, not a production number.
+- **One run per cell.** Every number here comes from a single measurement of 583 lookups, and the graph is rebuilt from scratch each run. Differences of a few points between adjacent cells are noise; the collapse past 90% dead is not.
 - **The dead share is swept, not sampled from reality.** How often a real workload sits at 90% dead depends entirely on its mutation rate; the table says what happens *if*, not how likely it is. Below 75% dead, TTL costs a few points of recall and nothing else.
 - **`ef_search` is left at the default 40.** Raising it lifts every column, including TTL's — a bigger candidate pool is another read-side mitigation with the same shape as iterative scan, paid on every lookup.
 - **One backend.** The Redis path in the design doc (eager `DEL` driven by a reverse index) is not implemented, so "one store owns entries, vectors and tags" is demonstrated, not compared.
 
 ## Next
 
-M4: the gateway plugin, a compose stack, and the `lang` column wired into the language gate — where the last of M2's false hits goes to die.
+All of it behind `/v1/chat/completions`, against the real API, with the `lang` column wired into the retrieval loop: [a cache in front of a real API](2026-08-29-a-cache-in-front-of-a-real-api.md). Running it found a migration that reported success while caching nothing.

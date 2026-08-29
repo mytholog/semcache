@@ -82,7 +82,10 @@ func main() {
 	flag.StringVar(&cfg.pgDSN, "pg-dsn", os.Getenv("SEMCACHE_DSN"), "Postgres DSN for -mode invalidate (defaults to $SEMCACHE_DSN)")
 	flag.StringVar(&cfg.pgSchema, "pg-schema", "semcache_bench", "Postgres schema for the invalidation study")
 	flag.BoolVar(&cfg.pgKeep, "pg-keep", false, "keep the corpus in Postgres after the study for manual inspection")
-	flag.IntVar(&cfg.docs, "docs", 4, "documents in the corpus; one of them is mutated, so 4 means 25% of entries die")
+	// Сотня документов — та гранулярность, на которой свип по доле мёртвых
+	// записей вообще имеет смысл: при четырёх документах доля 90% округляется
+	// до «умерло всё», и мерить становится нечего.
+	flag.IntVar(&cfg.docs, "docs", 100, "documents in the corpus; entries die a document at a time")
 	flag.IntVar(&cfg.corpusSize, "corpus-size", 20000, "entries in the invalidation corpus; real prompts padded with perturbations so the planner reaches for HNSW")
 	flag.IntVar(&cfg.k, "k", 5, "candidates retrieved per lookup")
 	flag.IntVar(&cfg.efSearch, "ef-search", 40, "hnsw.ef_search; pgvector default is 40")
@@ -166,17 +169,16 @@ func embedScored(ctx context.Context, cfg config, pairs []dataset.Pair, name str
 		return nil, nil, err
 	}
 
-	var embed batchEmbed
+	var embedFn batchEmbed
 	switch spec.kind {
 	case "openai":
 		if key := os.Getenv("OPENAI_API_KEY"); key != "" {
-			client, err := newOpenAI(cfg.baseURL, key, spec.remote, cfg.dims, cfg.timeout)
+			embedFn, err = openAIEmbed(cfg.baseURL, key, spec.remote, cfg.dims, cfg.timeout)
 			if err != nil {
 				return nil, nil, err
 			}
-			embed = client.embed
 		} else {
-			embed = func(context.Context, []string) ([][]float32, int, error) {
+			embedFn = func(context.Context, []string) ([][]float32, int, error) {
 				return nil, 0, fmt.Errorf("OPENAI_API_KEY is not set and embedding cache missed")
 			}
 		}
@@ -184,12 +186,12 @@ func embedScored(ctx context.Context, cfg config, pairs []dataset.Pair, name str
 		if err := localScriptExists(cfg.script); err != nil {
 			return nil, nil, err
 		}
-		embed = newLocal(spec.remote, spec.prefix, cfg.script, cfg.localTO)
+		embedFn = newLocal(spec.remote, spec.prefix, cfg.script, cfg.localTO)
 	default:
 		return nil, nil, fmt.Errorf("unsupported embedder kind %q", spec.kind)
 	}
 
-	emb, err := newCachedEmbedder(spec, cfg.dims, cfg.cacheDir, embed)
+	emb, err := newCachedEmbedder(spec, cfg.dims, cfg.cacheDir, embedFn)
 	if err != nil {
 		return nil, nil, err
 	}

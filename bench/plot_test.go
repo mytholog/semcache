@@ -29,6 +29,26 @@ func TestWriteFrontierSVG(t *testing.T) {
 	}
 }
 
+func TestWriteRecallSVG(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "invalidation-recall.svg")
+	lines := []recallLine{
+		{name: "eager tagged DELETE", shares: []float64{0.25, 0.99}, recall: []float64{0.98, 0.982}},
+		{name: "TTL only", shares: []float64{0.25, 0.99}, recall: []float64{0.97, 0.073}},
+	}
+	if err := writeRecallSVG(path, lines, 5); err != nil {
+		t.Fatal(err)
+	}
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{"<polyline", "TTL only", "recall@5"} {
+		if !strings.Contains(string(data), want) {
+			t.Errorf("svg does not contain %q", want)
+		}
+	}
+}
+
 func TestWriteFrontierSVGSinglePoint(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "frontier.svg")
 	sweeps := []namedSweep{{

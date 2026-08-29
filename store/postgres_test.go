@@ -98,7 +98,7 @@ func TestPostgresPutAndLookup(t *testing.T) {
 	}
 
 	t.Run("exact hash comes first with score 1", func(t *testing.T) {
-		got, err := pg.Lookup(ctx, "hash-b", unit(0), 5)
+		got, err := pg.Lookup(ctx, "", "hash-b", unit(0), 5)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -108,7 +108,7 @@ func TestPostgresPutAndLookup(t *testing.T) {
 	})
 
 	t.Run("ann orders by cosine and carries the payload", func(t *testing.T) {
-		got, err := pg.Lookup(ctx, "no-such-hash", unit(0), 5)
+		got, err := pg.Lookup(ctx, "", "no-such-hash", unit(0), 5)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -131,7 +131,7 @@ func TestPostgresPutAndLookup(t *testing.T) {
 	})
 
 	t.Run("no duplicates when hash and ann agree", func(t *testing.T) {
-		got, err := pg.Lookup(ctx, "hash-a", unit(0), 5)
+		got, err := pg.Lookup(ctx, "", "hash-a", unit(0), 5)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -200,7 +200,7 @@ func TestPostgresInvalidateIsAtomicWithVector(t *testing.T) {
 
 	// Вектор обязан уйти вместе с payload: иначе ANN продолжит отдавать
 	// кандидатов, которых уже нет.
-	got, err := pg.Lookup(ctx, "hash-a", unit(0), 10)
+	got, err := pg.Lookup(ctx, "", "hash-a", unit(0), 10)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -235,7 +235,7 @@ func TestPostgresExpiredEntriesAreNeverServed(t *testing.T) {
 	}
 
 	// Точное совпадение хеша тоже не спасает: просроченный ответ отдавать нельзя.
-	got, err := pg.Lookup(ctx, "hash-dead", unit(0), 5)
+	got, err := pg.Lookup(ctx, "", "hash-dead", unit(0), 5)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -274,7 +274,7 @@ func TestPostgresRejectsBadEntries(t *testing.T) {
 		})
 	}
 
-	if _, err := pg.Lookup(ctx, "h", []float32{1, 2}, 5); !errors.Is(err, ErrInvalidEntry) {
+	if _, err := pg.Lookup(ctx, "", "h", []float32{1, 2}, 5); !errors.Is(err, ErrInvalidEntry) {
 		t.Errorf("lookup err = %v, want ErrInvalidEntry", err)
 	}
 }

@@ -1,27 +1,23 @@
 package main
 
 import (
-	"bytes"
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
 	"log/slog"
-	"net/http"
 	"os"
 	"path/filepath"
 	"slices"
 	"strings"
 	"time"
+
+	"github.com/mytholog/semcache/embed"
 )
 
-const (
-	maxBatch    = 128
-	maxAttempts = 4
-)
+const maxBatch = embed.DefaultBatch
 
 // modelSpec описывает, куда слать тексты. Имена из спеки: openai, bge-m3, e5-large.
 type modelSpec struct {
@@ -174,142 +170,21 @@ func (e *embedder) costUSD() float64 {
 	return float64(e.tokens) / 1_000_000 * e.pricePer
 }
 
-type embedRequest struct {
-	Input          []string `json:"input"`
-	Model          string   `json:"model"`
-	Dimensions     int      `json:"dimensions,omitempty"`
-	EncodingFormat string   `json:"encoding_format"`
-}
-
-type embedResponse struct {
-	Data []struct {
-		Index     int       `json:"index"`
-		Embedding []float32 `json:"embedding"`
-	} `json:"data"`
-	Usage struct {
-		TotalTokens int `json:"total_tokens"`
-	} `json:"usage"`
-}
-
-type httpError struct {
-	status int
-	body   string
-}
-
-func (e *httpError) Error() string {
-	return fmt.Sprintf("embeddings API returned %d: %s", e.status, e.body)
-}
-
-func (e *httpError) retryable() bool {
-	return e.status == http.StatusTooManyRequests || e.status >= 500
-}
-
-type openaiClient struct {
-	http    *http.Client
-	baseURL string
-	apiKey  string
-	model   string
-	dims    int
-}
-
-func newOpenAI(baseURL, apiKey, model string, dims int, timeout time.Duration) (*openaiClient, error) {
-	if apiKey == "" {
-		return nil, errors.New("OPENAI_API_KEY is not set")
-	}
-	return &openaiClient{
-		http:    &http.Client{Timeout: timeout},
-		baseURL: strings.TrimSuffix(baseURL, "/"),
-		apiKey:  apiKey,
-		model:   model,
-		dims:    dims,
-	}, nil
-}
-
-func (c *openaiClient) embed(ctx context.Context, batch []string) ([][]float32, int, error) {
-	resp, err := c.post(ctx, batch)
-	if err != nil {
-		return nil, 0, err
-	}
-	out := make([][]float32, len(batch))
-	for _, item := range resp.Data {
-		if item.Index < 0 || item.Index >= len(batch) {
-			return nil, 0, fmt.Errorf("embeddings API returned out-of-range index %d for batch of %d", item.Index, len(batch))
-		}
-		out[item.Index] = item.Embedding
-	}
-	for i, v := range out {
-		if v == nil {
-			return nil, 0, fmt.Errorf("embeddings API missing vector for index %d", i)
-		}
-	}
-	return out, resp.Usage.TotalTokens, nil
-}
-
-func (c *openaiClient) post(ctx context.Context, batch []string) (*embedResponse, error) {
-	var lastErr error
-	for attempt := range maxAttempts {
-		if attempt > 0 {
-			delay := time.Duration(1<<attempt) * time.Second
-			slog.Warn("retrying embeddings request", "attempt", attempt+1, "delay", delay, "error", lastErr)
-			select {
-			case <-ctx.Done():
-				return nil, ctx.Err()
-			case <-time.After(delay):
-			}
-		}
-
-		resp, err := c.do(ctx, batch)
-		if err == nil {
-			return resp, nil
-		}
-		lastErr = err
-
-		var httpErr *httpError
-		if errors.As(err, &httpErr) && !httpErr.retryable() {
-			return nil, err
-		}
-		if ctx.Err() != nil {
-			return nil, errors.Join(err, ctx.Err())
-		}
-	}
-	return nil, fmt.Errorf("embeddings request failed after %d attempts: %w", maxAttempts, lastErr)
-}
-
-func (c *openaiClient) do(ctx context.Context, batch []string) (*embedResponse, error) {
-	body, err := json.Marshal(embedRequest{
-		Input:          batch,
-		Model:          c.model,
-		Dimensions:     c.dims,
-		EncodingFormat: "float",
+// openAIEmbed — адаптер публичного клиента к batchEmbed: бенчу нужны ещё и
+// токены, чтобы печатать стоимость холодного прогона.
+func openAIEmbed(baseURL, apiKey, model string, dims int, timeout time.Duration) (batchEmbed, error) {
+	client, err := embed.NewOpenAI(embed.OpenAIConfig{
+		APIKey:  apiKey,
+		BaseURL: baseURL,
+		Model:   model,
+		Dims:    dims,
+		Timeout: timeout,
 	})
 	if err != nil {
-		return nil, fmt.Errorf("encode embeddings request: %w", err)
+		return nil, err
 	}
-
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, c.baseURL+"/embeddings", bytes.NewReader(body))
-	if err != nil {
-		return nil, fmt.Errorf("build embeddings request: %w", err)
-	}
-	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Authorization", "Bearer "+c.apiKey)
-
-	resp, err := c.http.Do(req)
-	if err != nil {
-		return nil, fmt.Errorf("call embeddings API: %w", err)
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		snippet, _ := io.ReadAll(io.LimitReader(resp.Body, 512))
-		return nil, &httpError{status: resp.StatusCode, body: strings.TrimSpace(string(snippet))}
-	}
-
-	var out embedResponse
-	if err := json.NewDecoder(resp.Body).Decode(&out); err != nil {
-		return nil, fmt.Errorf("decode embeddings response: %w", err)
-	}
-	if len(out.Data) != len(batch) {
-		return nil, fmt.Errorf("embeddings API returned %d vectors for %d inputs", len(out.Data), len(batch))
-	}
-	return &out, nil
+	return func(ctx context.Context, texts []string) ([][]float32, int, error) {
+		vecs, usage, err := client.EmbedWithUsage(ctx, texts)
+		return vecs, usage.TotalTokens, err
+	}, nil
 }

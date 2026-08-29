@@ -1,0 +1,52 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="720" height="480" viewBox="0 0 720 480" font-family="ui-sans-serif, system-ui, sans-serif" font-size="12">
+<rect width="100%" height="100%" fill="#fafafa"/>
+<text x="70.0" y="22" font-size="16" font-weight="600">What dead entries do to ANN recall</text>
+<text x="70.0" y="38" fill="#666">recall@5 against exact search over the same live entries, 20k rows, pgvector HNSW</text>
+<text x="383.0" y="468.0" text-anchor="middle">share of entries invalidated</text>
+<text transform="translate(18 234.0) rotate(-90)" text-anchor="middle">recall@5</text>
+<rect x="70.0" y="44.0" width="626.0" height="380.0" fill="#fff" stroke="#d4d4d4"/>
+<line x1="70.0" y1="424.0" x2="70.0" y2="44.0" stroke="#eee"/>
+<line x1="70.0" y1="424.0" x2="696.0" y2="424.0" stroke="#eee"/>
+<text x="70.0" y="442.0" text-anchor="middle" fill="#666">0%</text>
+<text x="62.0" y="428.0" text-anchor="end" fill="#666">0.00</text>
+<line x1="226.5" y1="424.0" x2="226.5" y2="44.0" stroke="#eee"/>
+<line x1="70.0" y1="329.0" x2="696.0" y2="329.0" stroke="#eee"/>
+<text x="226.5" y="442.0" text-anchor="middle" fill="#666">25%</text>
+<text x="62.0" y="333.0" text-anchor="end" fill="#666">0.25</text>
+<line x1="383.0" y1="424.0" x2="383.0" y2="44.0" stroke="#eee"/>
+<line x1="70.0" y1="234.0" x2="696.0" y2="234.0" stroke="#eee"/>
+<text x="383.0" y="442.0" text-anchor="middle" fill="#666">50%</text>
+<text x="62.0" y="238.0" text-anchor="end" fill="#666">0.50</text>
+<line x1="539.5" y1="424.0" x2="539.5" y2="44.0" stroke="#eee"/>
+<line x1="70.0" y1="139.0" x2="696.0" y2="139.0" stroke="#eee"/>
+<text x="539.5" y="442.0" text-anchor="middle" fill="#666">75%</text>
+<text x="62.0" y="143.0" text-anchor="end" fill="#666">0.75</text>
+<line x1="696.0" y1="424.0" x2="696.0" y2="44.0" stroke="#eee"/>
+<line x1="70.0" y1="44.0" x2="696.0" y2="44.0" stroke="#eee"/>
+<text x="696.0" y="442.0" text-anchor="middle" fill="#666">100%</text>
+<text x="62.0" y="48.0" text-anchor="end" fill="#666">1.00</text>
+<polyline fill="none" stroke="#047857" stroke-width="2" points="226.5,84.4 383.0,69.0 539.5,61.1 633.4,58.3 664.7,46.6 689.7,51.8"/>
+<circle cx="226.5" cy="84.4" r="3" fill="#047857"/>
+<circle cx="383.0" cy="69.0" r="3" fill="#047857"/>
+<circle cx="539.5" cy="61.1" r="3" fill="#047857"/>
+<circle cx="633.4" cy="58.3" r="3" fill="#047857"/>
+<circle cx="664.7" cy="46.6" r="3" fill="#047857"/>
+<circle cx="689.7" cy="51.8" r="3" fill="#047857"/>
+<text x="82.0" y="380.0" fill="#047857">eager tagged DELETE</text>
+<polyline fill="none" stroke="#1d4ed8" stroke-width="2" points="226.5,97.8 383.0,93.1 539.5,94.8 633.4,132.5 664.7,160.9 689.7,147.2"/>
+<circle cx="226.5" cy="97.8" r="3" fill="#1d4ed8"/>
+<circle cx="383.0" cy="93.1" r="3" fill="#1d4ed8"/>
+<circle cx="539.5" cy="94.8" r="3" fill="#1d4ed8"/>
+<circle cx="633.4" cy="132.5" r="3" fill="#1d4ed8"/>
+<circle cx="664.7" cy="160.9" r="3" fill="#1d4ed8"/>
+<circle cx="689.7" cy="147.2" r="3" fill="#1d4ed8"/>
+<text x="82.0" y="396.0" fill="#1d4ed8">TTL + iterative scan</text>
+<polyline fill="none" stroke="#b45309" stroke-width="2" points="226.5,97.8 383.0,93.1 539.5,95.6 633.4,195.7 664.7,293.9 689.7,395.1"/>
+<circle cx="226.5" cy="97.8" r="3" fill="#b45309"/>
+<circle cx="383.0" cy="93.1" r="3" fill="#b45309"/>
+<circle cx="539.5" cy="95.6" r="3" fill="#b45309"/>
+<circle cx="633.4" cy="195.7" r="3" fill="#b45309"/>
+<circle cx="664.7" cy="293.9" r="3" fill="#b45309"/>
+<circle cx="689.7" cy="395.1" r="3" fill="#b45309"/>
+<text x="82.0" y="412.0" fill="#b45309">TTL only</text>
+</svg>

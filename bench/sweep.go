@@ -4,24 +4,13 @@ import (
 	"math"
 	"slices"
 
+	"github.com/mytholog/semcache/embed"
 	"github.com/mytholog/semcache/internal/dataset"
 )
 
 // normalize приводит вектор к единичной длине. OpenAI отдаёт нормализованные векторы,
 // но полагаться на это нельзя: харнесс должен одинаково работать с любым провайдером.
-func normalize(v []float32) {
-	var sum float64
-	for _, x := range v {
-		sum += float64(x) * float64(x)
-	}
-	norm := math.Sqrt(sum)
-	if norm == 0 {
-		return
-	}
-	for i := range v {
-		v[i] = float32(float64(v[i]) / norm)
-	}
-}
+func normalize(v []float32) { embed.Normalize(v) }
 
 // similarity — косинус между нормализованными векторами, то есть скалярное произведение.
 func similarity(a, b []float32) float64 {

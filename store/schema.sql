@@ -7,6 +7,12 @@ create extension if not exists vector with schema public;
 -- возвращать мёртвые записи и они занимают места в top-k.
 create table if not exists entries (
     id          text primary key,
+    -- namespace изолирует то, что нельзя путать: модель, версия шаблона,
+    -- арендатор. Фильтр по нему в ANN-ветке ведёт себя так же, как любой
+    -- другой фильтр поверх HNSW (см. пост M3): при нескольких сопоставимых
+    -- по размеру пространствах имён это несколько пунктов recall, при
+    -- сильном перекосе стоит включать iterative scan.
+    namespace   text not null default '',
     prompt_hash text not null,
     prompt      text not null,
     payload     text not null,
@@ -19,7 +25,23 @@ create table if not exists entries (
     expires_at  timestamptz
 );
 
+-- Колонки, появившиеся после первой версии схемы: create table if not exists
+-- на живой базе не добавит ни одной, и запрос сломается на отсутствующем поле.
+alter table entries add column if not exists namespace text not null default '';
+alter table entries add column if not exists lang text not null default '';
+
+-- Индекс только по prompt_hash, и namespace в него не входит намеренно —
+-- это тот же капкан, что с expires_at, в третий раз. Любой btree, которым
+-- можно удовлетворить предикат ANN-ветки, даёт планировщику обходной путь:
+-- он берёт по нему все подходящие строки и сортирует их точно, мимо HNSW.
+-- Ответы остаются верными, задержка растёт на два порядка — 114 мс против
+-- 1 мс. Порядок колонок не спасает: (prompt_hash, namespace) планировщик
+-- обходит полным сканом индекса.
+--
+-- Точному поиску namespace в индексе и не нужен: prompt_hash — хеш промпта,
+-- он уже отбирает единицы строк, и namespace проверяется по куче.
 create index if not exists entries_prompt_hash_idx on entries (prompt_hash);
+drop index if exists entries_lookup_idx;
 create index if not exists entries_embedding_idx on entries
     using hnsw (embedding vector_cosine_ops);
 

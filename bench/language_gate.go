@@ -5,8 +5,8 @@ import (
 	"os"
 	"text/tabwriter"
 
-	"github.com/mytholog/semcache/internal/verify"
-	"github.com/mytholog/semcache/internal/verify/lingua"
+	"github.com/mytholog/semcache/verify"
+	"github.com/mytholog/semcache/verify/lingua"
 )
 
 // gateStats — что языковой гейт делает с парами, дошедшими до второй стадии.
