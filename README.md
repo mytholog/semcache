@@ -84,6 +84,34 @@ err = cache.Put(ctx, semcache.Write{
 })
 ```
 
+## In a Bifrost gateway
+
+[`plugin/bifrost`](plugin/bifrost) is an `schemas.LLMPlugin` that puts the same two-stage cache in front of every LLM call a [Bifrost](https://github.com/maximhq/bifrost) gateway makes:
+
+```go
+plugin, _ := semcachebifrost.New(semcachebifrost.Config{Cache: cache})
+client, _ := core.Init(ctx, schemas.BifrostConfig{
+    Account:    account,
+    LLMPlugins: []schemas.LLMPlugin{plugin},
+})
+```
+
+Bifrost ships its own semantic cache, with a cosine `threshold` defaulting to `0.8` and TTL as the only way out. That default is a decision rule, so it can be run against the same labeled set:
+
+| Decision rule | Hit rate | False-hit rate |
+|---|---|---|
+| cosine ≥ 0.80 — Bifrost `semantic_cache` default | 96% | **66%** (287/432) |
+| cosine ≥ 0.85 | 92% | 53% (229/432) |
+| cosine ≥ 0.70, then LLM judge + language gate | **97%** | **1.4%** (6/432) |
+
+Two thirds of the answers served at the shipped default are answers to a different question, and raising the threshold trades hit rate away faster than false hits. This says nothing about their implementation — it is what any single cosine threshold does on this data.
+
+```bash
+OPENAI_API_KEY=... docker compose -f plugin/bifrost/compose.yaml up --build
+```
+
+brings up a gateway with the plugin and asks four questions, which should produce `miss`, `exact`, `verified` and `reject`. The plugin is a separate Go module, so none of `bifrost/core`'s dependencies reach the library. Details, including the one guarantee it cannot keep that the proxy does: [`plugin/bifrost/README.md`](plugin/bifrost/README.md).
+
 ## Read more
 
 - M1 write-up: [`docs/posts/2026-08-27-cosine-is-not-interchangeability.md`](docs/posts/2026-08-27-cosine-is-not-interchangeability.md)
@@ -105,6 +133,8 @@ make verify-study      # two-stage: Noop vs CrossEncoder vs LLM judge
 make pg-up             # pgvector 0.8 on Postgres 17, port 5434
 make pg-test           # store integration tests against it
 make invalidate-study  # eager tagged DELETE vs TTL
+make plugin-test       # the Bifrost plugin (separate module)
+make plugin-demo       # four questions through a Bifrost gateway
 ```
 
 Requires Go 1.27, `uv` for the Python sidecar, Docker for the Postgres store, and `OPENAI_API_KEY` for hosted embeddings and the judge. Embeddings, rerank scores and judge decisions cache under `bench/.cache/`; a cold judge run over v1 costs about $0.02. Cost is always reported for a cold run, so re-running does not print free verification. Store tests skip themselves unless `SEMCACHE_TEST_DSN` is set.

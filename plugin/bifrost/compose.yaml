@@ -1,0 +1,34 @@
+# Гейтвей Bifrost с плагином semcache и Postgres под записи.
+#
+#   OPENAI_API_KEY=... docker compose -f plugin/bifrost/compose.yaml up --build
+#
+# Демо задаёт четыре вопроса и печатает исходы: miss, exact, verified, reject.
+# Записи остаются в томе, поэтому второй запуск начинается с тёплого кэша.
+services:
+  postgres:
+    image: pgvector/pgvector:pg17
+    environment:
+      POSTGRES_USER: semcache
+      POSTGRES_PASSWORD: semcache
+      POSTGRES_DB: semcache
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U semcache"]
+      interval: 2s
+      timeout: 3s
+      retries: 15
+    volumes:
+      - semcache-pg:/var/lib/postgresql/data
+
+  gateway:
+    build:
+      context: ../..
+      dockerfile: plugin/bifrost/Dockerfile
+    environment:
+      OPENAI_API_KEY: ${OPENAI_API_KEY:?OPENAI_API_KEY is required}
+      SEMCACHE_DSN: postgres://semcache:semcache@postgres:5432/semcache?sslmode=disable
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+volumes:
+  semcache-pg:

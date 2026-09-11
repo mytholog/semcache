@@ -1,5 +1,5 @@
 .PHONY: run bench pilot study study-local verify-study langprobe genv1 csv verify fmt vet test race tidy \
-	pg-up pg-down pg-test invalidate-study vuln
+	pg-up pg-down pg-test invalidate-study vuln plugin-test plugin-demo
 
 # Прокси с кэшем в памяти процесса: чтобы посмотреть, как он себя ведёт,
 # ничего кроме ключа не нужно.
@@ -53,7 +53,16 @@ invalidate-study: pg-up
 	go run ./bench -mode invalidate -dataset bench/dataset/v1.jsonl \
 		-models text-embedding-3-small -pg-dsn '$(PG_DSN)'
 
-verify: fmt vet vuln race
+verify: fmt vet vuln race plugin-test
+
+# Плагин к Bifrost — отдельный модуль: bifrost/core тянет sonic, fasthttp и
+# zerolog, и в библиотеке этим зависимостям места нет.
+plugin-test:
+	cd plugin/bifrost && go vet ./... && go tool govulncheck ./... && go test -race ./...
+
+# Четыре вопроса через гейтвей с плагином: miss, exact, verified, reject.
+plugin-demo:
+	cd plugin/bifrost && go run ./cmd/semcache-bifrost
 
 fmt:
 	gofmt -l -w .

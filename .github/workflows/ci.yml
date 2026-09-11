@@ -46,3 +46,17 @@ jobs:
         run: go test -race ./...
         env:
           SEMCACHE_TEST_DSN: postgres://semcache:semcache@localhost:5432/semcache?sslmode=disable
+
+      # Плагин к Bifrost — отдельный модуль: его зависимости не должны попадать
+      # в библиотеку, поэтому и собирается он отдельно.
+      - name: plugin vet
+        working-directory: plugin/bifrost
+        run: go vet ./...
+      # Свой сканер: tool-директива корневого модуля здесь не действует, а
+      # граф зависимостей у плагина в пятнадцать раз больше.
+      - name: plugin govulncheck
+        working-directory: plugin/bifrost
+        run: go tool govulncheck ./...
+      - name: plugin test
+        working-directory: plugin/bifrost
+        run: go test -race ./...
