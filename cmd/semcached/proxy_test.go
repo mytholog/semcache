@@ -14,6 +14,7 @@ import (
 	"sync"
 	"sync/atomic"
 	"testing"
+	"testing/synctest"
 	"time"
 
 	"github.com/mytholog/semcache"
@@ -405,42 +406,44 @@ func TestBackgroundWriteQueue(t *testing.T) {
 // провайдера, а не столько, сколько клиентов пришло одновременно.
 func TestConcurrentMissesCoalesce(t *testing.T) {
 	t.Parallel()
-	release := make(chan struct{})
-	up := &fakeUpstream{answer: "Answer."}
-	upstream := up.upstream()
-	inner := upstream.Client.Transport
-	upstream.Client.Transport = roundTripFunc(func(r *http.Request) (*http.Response, error) {
-		<-release // держим первый вызов, пока не соберутся остальные
-		return inner.RoundTrip(r)
-	})
-	srv := newTestServer(t, upstream, verify.Noop{}, stubEmbedder{})
+	synctest.Test(t, func(t *testing.T) {
+		release := make(chan struct{})
+		up := &fakeUpstream{answer: "Answer."}
+		upstream := up.upstream()
+		inner := upstream.Client.Transport
+		upstream.Client.Transport = roundTripFunc(func(r *http.Request) (*http.Response, error) {
+			<-release // держим первый вызов, пока не соберутся остальные
+			return inner.RoundTrip(r)
+		})
+		srv := newTestServer(t, upstream, verify.Noop{}, stubEmbedder{})
 
-	const clients = 8
-	body := chatBody(t, "How do I reset my password?", nil)
-	var wg sync.WaitGroup
-	codes := make([]int, clients)
-	for i := range clients {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
-			codes[i] = post(t, srv, "/v1/chat/completions", body, nil).Code
-		}()
-	}
-
-	// Ждём, пока все окажутся в singleflight, и только затем отпускаем
-	// провайдера: иначе тест измерял бы скорость горутин.
-	time.Sleep(200 * time.Millisecond)
-	close(release)
-	wg.Wait()
-
-	for i, code := range codes {
-		if code != http.StatusOK {
-			t.Errorf("client %d got %d", i, code)
+		const clients = 8
+		body := chatBody(t, "How do I reset my password?", nil)
+		var wg sync.WaitGroup
+		codes := make([]int, clients)
+		for i := range clients {
+			wg.Add(1)
+			go func() {
+				defer wg.Done()
+				codes[i] = post(t, srv, "/v1/chat/completions", body, nil).Code
+			}()
 		}
-	}
-	if calls := up.calls.Load(); calls != 1 {
-		t.Errorf("upstream calls = %d, want 1 for %d identical concurrent requests", calls, clients)
-	}
+
+		// Ждём, пока все окажутся в singleflight (лидер на <-release, остальные
+		// на WaitGroup), и только затем отпускаем провайдера.
+		synctest.Wait()
+		close(release)
+		wg.Wait()
+
+		for i, code := range codes {
+			if code != http.StatusOK {
+				t.Errorf("client %d got %d", i, code)
+			}
+		}
+		if calls := up.calls.Load(); calls != 1 {
+			t.Errorf("upstream calls = %d, want 1 for %d identical concurrent requests", calls, clients)
+		}
+	})
 }
 
 func TestMetricsAreExposed(t *testing.T) {

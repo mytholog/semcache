@@ -1,5 +1,5 @@
 .PHONY: run bench pilot study study-local verify-study langprobe genv1 csv verify fmt vet test race tidy \
-	pg-up pg-down pg-test invalidate-study
+	pg-up pg-down pg-test invalidate-study vuln
 
 # Прокси с кэшем в памяти процесса: чтобы посмотреть, как он себя ведёт,
 # ничего кроме ключа не нужно.
@@ -53,7 +53,7 @@ invalidate-study: pg-up
 	go run ./bench -mode invalidate -dataset bench/dataset/v1.jsonl \
 		-models text-embedding-3-small -pg-dsn '$(PG_DSN)'
 
-verify: fmt vet race
+verify: fmt vet vuln race
 
 fmt:
 	gofmt -l -w .
@@ -66,6 +66,9 @@ test:
 
 race:
 	go test -race ./...
+
+vuln:
+	go tool govulncheck ./...
 
 tidy:
 	go mod tidy

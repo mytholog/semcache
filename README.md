@@ -107,4 +107,4 @@ make pg-test           # store integration tests against it
 make invalidate-study  # eager tagged DELETE vs TTL
 ```
 
-Requires Go 1.26, `uv` for the Python sidecar, Docker for the Postgres store, and `OPENAI_API_KEY` for hosted embeddings and the judge. Embeddings, rerank scores and judge decisions cache under `bench/.cache/`; a cold judge run over v1 costs about $0.02. Cost is always reported for a cold run, so re-running does not print free verification. Store tests skip themselves unless `SEMCACHE_TEST_DSN` is set.
+Requires Go 1.27, `uv` for the Python sidecar, Docker for the Postgres store, and `OPENAI_API_KEY` for hosted embeddings and the judge. Embeddings, rerank scores and judge decisions cache under `bench/.cache/`; a cold judge run over v1 costs about $0.02. Cost is always reported for a cold run, so re-running does not print free verification. Store tests skip themselves unless `SEMCACHE_TEST_DSN` is set.
