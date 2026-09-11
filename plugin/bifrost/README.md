@@ -66,7 +66,12 @@ about what is cacheable are two different caches.
   model name are different deployments, and serving one's answer for the other
   is a substitution, not a hit.
 - Bypassed, with a counted reason: `n > 1`, tool definitions, non-text content
-  blocks, an empty conversation, and streaming requests.
+  blocks, and an empty conversation.
+- Streaming works both ways. A hit is replayed as a single chunk carrying the
+  whole text — chopping it up would imitate a generation that never happened —
+  and a streamed miss is accumulated from its deltas and written when the stream
+  ends. Replay alone would be nearly useless: streaming clients would only ever
+  hit entries written by non-streaming ones.
 - Writes happen off the request path, bounded by `MaxPendingWrites` and dropped
   when that bound is reached. A dropped write is a future miss; a blocked
   `PostLLMHook` is added latency on every miss.
@@ -94,6 +99,11 @@ a hit unmarshals it back — so a hit returns whatever the struct round-trips, a
 any provider field Bifrost itself drops is dropped from a cache hit too. That is
 a property of where the hook sits, not of the cache.
 
+A streamed miss is one step weaker again: the hook sees deltas, so the cached
+answer is assembled here — one choice with the concatenated text, `usage` from
+the final chunk — rather than received. The alternative is not caching streamed
+answers, which for a streaming client means no cache at all.
+
 ## Demo
 
 ```bash
@@ -106,12 +116,14 @@ with the opposite meaning. A run against `gpt-4o-mini`:
 
 | Request | Outcome | Latency |
 |---|---|---|
-| cold, nothing cached | `miss` | 2.85 s |
-| the same question again | `exact` | **0.24 s** |
-| "What's the procedure for resetting my password?" | `verified` | 0.96 s |
-| "How do I **stop** my password from being reset?" | `reject` | 3.83 s, answered by the provider |
+| cold, nothing cached | `miss` | 4.72 s |
+| the same question again | `exact` | **0.29 s** |
+| "What's the procedure for resetting my password?" | `verified` | 1.55 s |
+| "How do I **stop** my password from being reset?" | `reject` | 4.83 s, answered by the provider |
+| a new question, streaming | `miss` | 3.13 s, assembled from deltas and cached |
+| the same question, streaming | `exact` | **0.16 s**, replayed as a stream |
 
-The last row is the point, and it is the row a cosine threshold gets wrong.
+The `reject` row is the point, and it is the row a cosine threshold gets wrong.
 
 Without Docker, and against an in-process store:
 

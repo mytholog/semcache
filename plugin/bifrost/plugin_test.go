@@ -263,15 +263,6 @@ func TestBypassIsNotCached(t *testing.T) {
 			req:    chatRequest(text, func(r *schemas.BifrostChatRequest) { r.Input = nil }),
 			reason: bypassNoMessages,
 		},
-		{
-			name: "streaming",
-			req: func() *schemas.BifrostRequest {
-				r := chatRequest(text, nil)
-				r.RequestType = schemas.ChatCompletionStreamRequest
-				return r
-			}(),
-			reason: bypassStream,
-		},
 	}
 
 	for _, tc := range cases {

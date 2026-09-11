@@ -87,6 +87,7 @@ type contextKey string
 const (
 	keyPrompt    contextKey = "semcache.prompt"
 	keyNamespace contextKey = "semcache.namespace"
+	keyStream    contextKey = "semcache.stream"
 )
 
 // Виды исхода в счётчиках: те же, что у кэша, плюс bypass и ошибки.
@@ -142,12 +143,12 @@ func (p *Plugin) PreLLMHook(ctx *schemas.BifrostContext, req *schemas.BifrostReq
 		return req, nil, nil
 	}
 
-	streaming := req.RequestType == schemas.ChatCompletionStreamRequest
-	prompt, reason := cacheKey(req.ChatRequest, streaming)
+	prompt, reason := cacheKey(req.ChatRequest)
 	if reason != "" {
 		p.count(counterBypass + ":" + reason)
 		return req, nil, nil
 	}
+	streaming := req.RequestType == schemas.ChatCompletionStreamRequest
 
 	namespace := namespaceOf(p.prefix, req.ChatRequest.Provider, req.ChatRequest.Model)
 	res, err := p.cache.Get(ctx, semcache.Query{Prompt: prompt, Namespace: namespace})
@@ -166,8 +167,7 @@ func (p *Plugin) PreLLMHook(ctx *schemas.BifrostContext, req *schemas.BifrostReq
 	if !res.Hit() {
 		// Промах и отклонение равно уходят провайдеру, но различаются в
 		// счётчиках: без этого не видно, работает ли вторая стадия.
-		ctx.SetValue(keyPrompt, prompt)
-		ctx.SetValue(keyNamespace, namespace)
+		p.armWrite(ctx, prompt, namespace, streaming)
 		return req, nil, nil
 	}
 
@@ -176,13 +176,48 @@ func (p *Plugin) PreLLMHook(ctx *schemas.BifrostContext, req *schemas.BifrostReq
 		// Запись есть, но прочесть её нельзя: это ошибка кэша, а не ответ.
 		p.count(counterError + ":decode")
 		p.log.Error("semcache payload is not a chat response", "error", err, "namespace", namespace)
-		ctx.SetValue(keyPrompt, prompt)
-		ctx.SetValue(keyNamespace, namespace)
+		p.armWrite(ctx, prompt, namespace, streaming)
 		return req, nil, nil
 	}
 
 	ctx.Log(schemas.LogLevelDebug, "semcache "+res.Kind+" score="+strconv.FormatFloat(res.Score, 'f', 4, 64))
+	if streaming {
+		return req, &schemas.LLMPluginShortCircuit{Stream: p.replay(ctx, resp)}, nil
+	}
 	return req, &schemas.LLMPluginShortCircuit{Response: &schemas.BifrostResponse{ChatResponse: resp}}, nil
+}
+
+// armWrite оставляет в контексте всё, что понадобится PostLLMHook: запрос ему
+// не передают. Стримовому ответу нужен ещё и накопитель — хук увидит дельты, а
+// не ответ.
+func (p *Plugin) armWrite(ctx *schemas.BifrostContext, prompt, namespace string, streaming bool) {
+	ctx.SetValue(keyPrompt, prompt)
+	ctx.SetValue(keyNamespace, namespace)
+	if streaming {
+		ctx.SetValue(keyStream, &streamAccumulator{})
+	}
+}
+
+// replay отдаёт попадание потоком. Канал закрывается продюсером: core его
+// дренирует и без закрытия ждал бы вечно.
+func (p *Plugin) replay(ctx *schemas.BifrostContext, resp *schemas.BifrostChatResponse) chan *schemas.BifrostStreamChunk {
+	// Root берётся здесь, а не в горутине: плагин-скоупный контекст уходит в
+	// пул в момент выхода из хука, и запись в него после этого попала бы в
+	// отсоединённую память, а то и в чужой запрос.
+	root := ctx.Root()
+	out := make(chan *schemas.BifrostStreamChunk, 1)
+
+	p.pending.Add(1)
+	go func() {
+		defer p.pending.Done()
+		defer close(out)
+
+		// Признак конца потока нужен core, чтобы финализировать спаны и
+		// выгрузить логи плагинов; выставляется он до последнего чанка.
+		root.SetValue(schemas.BifrostContextKeyStreamEndIndicator, true)
+		out <- replayChunk(resp)
+	}()
+	return out
 }
 
 // PostLLMHook кладёт ответ провайдера в кэш. Запись идёт вне хука: она стоит
@@ -199,7 +234,25 @@ func (p *Plugin) PostLLMHook(ctx *schemas.BifrostContext, resp *schemas.BifrostR
 		return resp, bifrostErr, nil
 	}
 
-	payload, err := encodePayload(resp.ChatResponse)
+	// У стримового ответа хук вызывается на каждый чанк, и кэшировать нечего
+	// до последнего: ответа как такового ещё нет, есть дельты.
+	chat := resp.ChatResponse
+	if acc, ok := ctx.Value(keyStream).(*streamAccumulator); ok && isStreamChunk(chat) {
+		acc.add(chat)
+		if !streamEnded(ctx, chat) {
+			return resp, bifrostErr, nil
+		}
+		if chat = acc.assemble(); chat == nil {
+			p.count(counterError + ":assemble")
+			p.log.Error("semcache could not assemble a streamed answer", "namespace", namespace)
+			return resp, bifrostErr, nil
+		}
+		// Второго чанка с признаком конца быть не должно, но если он придёт,
+		// запись не должна повториться.
+		ctx.SetValue(keyPrompt, "")
+	}
+
+	payload, err := encodePayload(chat)
 	if err != nil {
 		p.count(counterError + ":encode")
 		p.log.Error("semcache encode failed", "error", err, "namespace", namespace)
@@ -210,13 +263,23 @@ func (p *Plugin) PostLLMHook(ctx *schemas.BifrostContext, resp *schemas.BifrostR
 		Prompt:    prompt,
 		Namespace: namespace,
 		Payload:   payload,
-		Answer:    answerText(resp.ChatResponse),
+		Answer:    answerText(chat),
 		// model:<имя> в тегах позволяет разом убрать ответы модели при смене
 		// её версии; изолирует их namespace, а не тег.
-		Tags: append(append([]string(nil), p.tags...), "model:"+resp.ChatResponse.Model),
+		Tags: append(append([]string(nil), p.tags...), "model:"+chat.Model),
 	}
 	p.enqueue(w)
 	return resp, bifrostErr, nil
+}
+
+// streamEnded — конец потока. Основной признак ставит провайдер в контексте, и
+// приходит он вместе с последним чанком, где лежит usage. finish_reason —
+// запасной: у провайдера, который признак не ставит, иначе не записать ничего.
+func streamEnded(ctx *schemas.BifrostContext, chat *schemas.BifrostChatResponse) bool {
+	if done, ok := ctx.Value(schemas.BifrostContextKeyStreamEndIndicator).(bool); ok && done {
+		return true
+	}
+	return finishReasonOf(chat) != ""
 }
 
 // Cleanup дожидается начатых записей: ответ, за который уже заплатили, не

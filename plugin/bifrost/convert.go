@@ -15,7 +15,6 @@ const (
 	bypassTools           = "tools"
 	bypassNonTextContent  = "non_text_content"
 	bypassNoMessages      = "no_messages"
-	bypassStream          = "stream"
 )
 
 // cacheKey собирает ключ из всего диалога: ответ зависит от системного промпта
@@ -24,12 +23,7 @@ const (
 //
 // Правила совпадают с правилами semcached намеренно: два адаптера над одним
 // кэшем, расходящиеся в том, что кэшируемо, — это два разных кэша.
-func cacheKey(req *schemas.BifrostChatRequest, streaming bool) (string, string) {
-	if streaming {
-		// Попадание можно было бы отдать через LLMPluginShortCircuit.Stream,
-		// но пока это не проверено на живом клиенте, честнее не мешать.
-		return "", bypassStream
-	}
+func cacheKey(req *schemas.BifrostChatRequest) (string, string) {
 	if req.Params != nil {
 		if req.Params.N != nil && *req.Params.N > 1 {
 			// Клиент просит несколько разных ответов — кэш вернул бы один.

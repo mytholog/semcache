@@ -33,7 +33,7 @@ func TestCacheKeyCoversWholeConversation(t *testing.T) {
 		{Role: schemas.ChatMessageRoleUser, Content: &schemas.ChatMessageContent{ContentStr: &user}},
 	}}
 
-	key, reason := cacheKey(req, false)
+	key, reason := cacheKey(req)
 	if reason != "" {
 		t.Fatalf("bypass reason = %q, want none", reason)
 	}
@@ -55,7 +55,7 @@ func TestCacheKeyDistinguishesSystemPrompt(t *testing.T) {
 			{Role: schemas.ChatMessageRoleSystem, Content: &schemas.ChatMessageContent{ContentStr: &system}},
 			{Role: schemas.ChatMessageRoleUser, Content: &schemas.ChatMessageContent{ContentStr: &user}},
 		}}
-		key, reason := cacheKey(req, false)
+		key, reason := cacheKey(req)
 		if reason != "" {
 			t.Fatalf("bypass reason = %q, want none", reason)
 		}

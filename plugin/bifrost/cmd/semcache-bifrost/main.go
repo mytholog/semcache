@@ -116,11 +116,16 @@ func run(ctx context.Context, log *slog.Logger) error {
 	questions := []struct {
 		label  string
 		prompt string
+		stream bool
 	}{
-		{"cold", "How do I reset my password?"},
-		{"same question", "How do I reset my password?"},
-		{"paraphrase", "What's the procedure for resetting my password?"},
-		{"opposite meaning", "How do I stop my password from being reset?"},
+		{label: "cold", prompt: "How do I reset my password?"},
+		{label: "same question", prompt: "How do I reset my password?"},
+		{label: "paraphrase", prompt: "What's the procedure for resetting my password?"},
+		{label: "opposite meaning", prompt: "How do I stop my password from being reset?"},
+		// Стриминг в обе стороны: сначала поток наполняет кэш, потом кэш
+		// отдаётся потоком.
+		{label: "cold, streaming", prompt: "How do I change my billing address?", stream: true},
+		{label: "same, streaming", prompt: "How do I change my billing address?", stream: true},
 	}
 
 	fmt.Printf("%-18s  %8s  %s\n", "request", "latency", "answer")
@@ -133,12 +138,12 @@ func run(ctx context.Context, log *slog.Logger) error {
 		}
 
 		start := time.Now()
-		resp, bifrostErr := ask(ctx, client, q.prompt)
+		answer, bifrostErr := askOrStream(ctx, client, q.prompt, q.stream)
 		took := time.Since(start)
 		if bifrostErr != nil {
 			return fmt.Errorf("chat request %q: %s", q.label, bifrostErrText(bifrostErr))
 		}
-		fmt.Printf("%-18s  %7.2fs  %s\n", q.label, took.Seconds(), firstLine(answerOf(resp)))
+		fmt.Printf("%-18s  %7.2fs  %s\n", q.label, took.Seconds(), firstLine(answer))
 	}
 
 	fmt.Println()
@@ -174,18 +179,51 @@ func waitForWrites(ctx context.Context, p *semcachebifrost.Plugin) error {
 	}
 }
 
-func ask(ctx context.Context, client *core.Bifrost, prompt string) (*schemas.BifrostChatResponse, *schemas.BifrostError) {
+func askOrStream(ctx context.Context, client *core.Bifrost, prompt string, stream bool) (string, *schemas.BifrostError) {
 	bctx, cancel := schemas.NewBifrostContextWithTimeout(ctx, 2*time.Minute)
 	defer cancel()
 
-	return client.ChatCompletionRequest(bctx, &schemas.BifrostChatRequest{
+	req := &schemas.BifrostChatRequest{
 		Provider: schemas.OpenAI,
 		Model:    chatModel,
 		Input: []schemas.ChatMessage{{
 			Role:    schemas.ChatMessageRoleUser,
 			Content: &schemas.ChatMessageContent{ContentStr: &prompt},
 		}},
-	})
+	}
+	if !stream {
+		resp, bifrostErr := client.ChatCompletionRequest(bctx, req)
+		if bifrostErr != nil {
+			return "", bifrostErr
+		}
+		return answerOf(resp), nil
+	}
+
+	chunks, bifrostErr := client.ChatCompletionStreamRequest(bctx, req)
+	if bifrostErr != nil {
+		return "", bifrostErr
+	}
+	var b strings.Builder
+	for chunk := range chunks {
+		if chunk == nil {
+			continue
+		}
+		if chunk.BifrostError != nil {
+			return "", chunk.BifrostError
+		}
+		if chunk.BifrostChatResponse == nil {
+			continue
+		}
+		for _, c := range chunk.BifrostChatResponse.Choices {
+			if c.ChatStreamResponseChoice == nil || c.ChatStreamResponseChoice.Delta == nil {
+				continue
+			}
+			if content := c.ChatStreamResponseChoice.Delta.Content; content != nil {
+				b.WriteString(*content)
+			}
+		}
+	}
+	return b.String(), nil
 }
 
 func openStore(ctx context.Context, dims int, log *slog.Logger) (store.Store, func(), error) {

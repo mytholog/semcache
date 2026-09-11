@@ -64,10 +64,21 @@ what is cacheable are two different caches.
   them), non-text content blocks, and an empty conversation. Each reason is
   counted. Temperature is deliberately not on the list, for the reason given in
   the proxy write-up.
-- **Streaming** requests (`ChatCompletionStreamRequest`) are not served from
-  cache in this version and not written to it. `LLMPluginShortCircuit` does have
-  a `Stream` channel, so replay is possible later; until it is measured against a
-  real client, the honest behaviour is to stay out of the way.
+- **Streaming** works in both directions. A hit is replayed through
+  `LLMPluginShortCircuit.Stream` as a single chunk carrying the whole text, the
+  role and `finish_reason` — chopping it up would be imitating a generation that
+  never happened, since the text is already in memory. A streamed miss is
+  accumulated from the deltas in `PostLLMHook` and written once the stream ends.
+
+  Both halves are needed for either to mean anything: replay alone would let
+  streaming clients hit only entries written by non-streaming ones, so a
+  deployment where every client streams would keep an empty cache forever.
+
+  End of stream is the provider-set `BifrostContextKeyStreamEndIndicator`, which
+  arrives with the last chunk and therefore with `usage`; `finish_reason` is the
+  fallback for providers that do not set it. The producer captures `ctx.Root()`
+  before spawning, because the plugin-scoped context returns to a `sync.Pool` the
+  moment the hook returns.
 - **Writes are off the request path.** A write costs an embedding call, and
   `PostLLMHook` runs before the response reaches the client. Writes go to a
   goroutine bounded by a semaphore and are dropped when the bound is reached: a
@@ -96,6 +107,11 @@ struct round-trips, so any provider field Bifrost itself drops is dropped from a
 cache hit too. This is a weaker guarantee than the proxy's, and it is a property
 of where the hook sits, not of the cache.
 
+A streamed miss is one step weaker still. The hook sees deltas, so the cached
+payload is assembled by us — one choice with the concatenated text, `usage` from
+the final chunk — and not by the provider. The alternative is not caching
+streamed answers at all, which for a streaming client means no cache.
+
 ## Prompt across hooks
 
 `PostLLMHook` receives the response and the error, not the request, so the key
@@ -116,3 +132,9 @@ provider keys:
 - a different provider or model with the same prompt is a miss
 - the payload survives a marshal/unmarshal round trip, including `usage` and
   `system_fingerprint`
+- a streamed answer is assembled from its deltas, cached, and then served to a
+  non-streaming request
+- a hit is replayed to a streaming request as one chunk, with the end of stream
+  marked, and replaying it does not write it back
+- a stream that ends without a single delta is not cached: an empty answer in
+  the cache is worse than a miss, because it looks real
