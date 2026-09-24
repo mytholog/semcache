@@ -19,6 +19,11 @@ type Pair struct {
 	HumanAuthored   bool   `json:"human_authored"`
 	Source          string `json:"source,omitempty"`
 	Note            string `json:"note,omitempty"`
+
+	// Answer — текст ответа, записанного для B. Пусто в v1.
+	// AnswerLang — язык этого ответа, как его сохранил бы Put по полному тексту.
+	Answer     string `json:"answer,omitempty"`
+	AnswerLang string `json:"answer_lang,omitempty"`
 }
 
 // Categories задаёт таксономию и ожидаемую разметку: категория определяет
@@ -71,6 +76,8 @@ func Load(path string) ([]Pair, error) {
 			problems = append(problems, fmt.Sprintf("%s: empty prompt side", p.ID))
 		case p.A == p.B:
 			problems = append(problems, fmt.Sprintf("%s: identical sides", p.ID))
+		case (p.Answer == "") != (p.AnswerLang == ""):
+			problems = append(problems, fmt.Sprintf("%s: answer and answer_lang must be set together", p.ID))
 		}
 		if prev, dup := seen[p.ID]; dup {
 			problems = append(problems, fmt.Sprintf("%s: duplicate id, first seen on line %d", p.ID, prev))

@@ -22,6 +22,9 @@ study-local:
 genv1:
 	go run ./tools/genv1
 
+genv2:
+	go run ./tools/genv2
+
 csv:
 	go run ./bench -dataset bench/dataset/v1.jsonl -models text-embedding-3-small
 

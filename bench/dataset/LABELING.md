@@ -6,8 +6,9 @@
 |---|---|
 | `pilot.jsonl` | 80 hand-written pairs, 10 per category. Gold subset. `human_authored: true`, `source: hand`. |
 | `v1.jsonl` | Gold plus template expansions. Built by `go run ./tools/genv1`. Target 600–1000 pairs. |
+| `v2.jsonl` | v1 plus an answer and `answer_lang` on every pair, and same-language paraphrase/format pairs for each language in the switch set. Built by `go run ./tools/genv2`. |
 
-Do not edit `v1.jsonl` by hand. Change `pilot.jsonl` or `tools/genv1/main.go` and regenerate.
+Do not edit `v1.jsonl` or `v2.jsonl` by hand. Change the generator and regenerate.
 
 ## Question the label answers
 
@@ -44,5 +45,6 @@ Template expansions are not individually copy-edited. Review is of the template 
 
 - Domain is synthetic SaaS/infra support, not a production trace.
 - English-heavy; `language_switch` is mostly EN paired with RU/DE/FR/ES/JA/ZH/PL/IT/PT/TR.
+- v2 answers are one canned paragraph per language, not a model completion. `answer_lang` is assigned by script and a few Latin cues, then checked by failing the generator when a switch cannot be labeled. The new positive pairs are templates and are not individually reviewed. Chinese is in the file, but the detector used by the gate does not include it, so those pairs do not move the gate measurement.
 - `paraphrase` templates lean on "How do I X?" / "What is the process for X?" — easier than messy real paraphrases, which makes the cosine-vs-paraphrase result *conservative* if it still fails.
 - One pair is ~0.1–0.2 percentage points on v1; treat per-category cells under ~50 pairs as noisy.
