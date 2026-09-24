@@ -34,6 +34,20 @@ The cross-encoder is free and gets the false-hit rate lower still (2.8%), but on
 
 The last two rows are the judge and the reranker with a deterministic language gate in front, which costs nothing and no model call. Together with the judge that is **1.4% false-hit at 97% hit rate** — 26× better than a cosine threshold, at the same recall the threshold could never reach.
 
+## A cheaper judge does not get cheaper
+
+The 5.3% figure is `gpt-4o-mini` at $0.15 / $0.60 per million input / output tokens, which on this run is 105,625 tokens and **$0.021**. Two successors are cheaper on the price card. Re-running the same 548 retrieved pairs on 2026-09-24, with decisions cached per model so they cannot reuse the 4o-mini verdicts:
+
+| Judge | Hit rate | False-hit | With language gate | Verify cost | Share of savings |
+|---|---|---|---|---|---|
+| `gpt-4o-mini` | 97% | 4.9% (21/432) | 1.4% (6/432) | $0.021 | **5.3%** |
+| `gpt-5-nano`, `reasoning_effort=minimal` | 89.1% | 3.2% (14/432) | 0.7% (3/432) | $0.016 | 4.3% |
+| `gpt-5-mini`, `reasoning_effort=minimal` | 97.3% | 1.4% (6/432) | 0.2% (1/432) | $0.074 | **19.9%** |
+
+`gpt-5-nano` ($0.05 / $0.40) is the only one that costs less, and it pays for that by dropping paraphrases: 67 accepted out of 82 retrieved, against 81 for `gpt-4o-mini`. One of its false hits is `scope`, so the residual is no longer entirely `language_switch`. `gpt-5-mini` ($0.25 / $2.00) matches the recall and cuts false hits, including after the gate, but output tokens are priced at $2.00 per million — three times `gpt-4o-mini` — and the bill is $0.074, a fifth of the spend the hits avoid. That misses the single-digit budget the design set. The default stays `gpt-4o-mini`.
+
+Two request details, or the comparison is not the one above. `gpt-5` rejects `temperature: 0` (only the default 1 is accepted), so those runs omit the field. Left on the default reasoning effort, one two-line pair spent 256 reasoning tokens before a 30-token JSON answer; `reasoning_effort=minimal` brings completion tokens back to ~45 per pair. The table is that setting. Prompt tokens were 93,730 on both models; completion was 26,973 for nano and 25,111 for mini.
+
 ## The residual errors are all one category
 
 At their respective operating points, **every remaining false hit in both verifiers is `language_switch`**:

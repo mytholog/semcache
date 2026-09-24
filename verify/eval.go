@@ -59,12 +59,14 @@ func Evaluate(sim []float64, interchangeable []bool, retrieveMin float64, ok []b
 
 // Cost — грубая экономика одного прогона.
 type Cost struct {
-	Hits            int
-	VerifyCalls     int
-	VerifyCacheHits int
-	JudgeTokens     int
-	ProviderUSD     float64
-	VerifyUSD       float64
+	Hits             int
+	VerifyCalls      int
+	VerifyCacheHits  int
+	JudgeTokens      int
+	PromptTokens     int
+	CompletionTokens int
+	ProviderUSD      float64
+	VerifyUSD        float64
 }
 
 func (c Cost) SavedUSD() float64 {

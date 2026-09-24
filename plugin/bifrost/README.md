@@ -40,7 +40,7 @@ the model their config takes too:
 | cosine ≥ 0.80 — `semantic_cache` default | 96% | **66%** (287/432) |
 | cosine ≥ 0.85 | 92% | 53% (229/432) |
 | cosine ≥ 0.90 | 73% | 37% (161/432) |
-| cosine ≥ 0.70, then LLM judge + language gate | **97%** | **1.4%** (6/432) |
+| cosine ≥ 0.70, then LLM judge (`gpt-4o-mini`) + language gate | **97%** | **1.4%** (6/432) |
 
 Two thirds of the answers served at the shipped default are answers to a
 different question. The number is not an argument about their implementation —
@@ -51,7 +51,10 @@ hits, because the ranking itself is wrong. A question with the opposite meaning
 scores **higher** than a legitimate paraphrase.
 
 Numbers come from [`bench/out/text-embedding-3-small-sweep.csv`](../../bench/out/text-embedding-3-small-sweep.csv)
-(`make study`) and the verifier sweep (`make verify-study`).
+(`make study`) and the verifier sweep (`make verify-study`). `gpt-5-nano` and
+`gpt-5-mini` were measured against the same pairs and did not replace
+`gpt-4o-mini`: nano loses paraphrases, mini spends 19.9% of the savings on the
+judge ([why](../../docs/posts/2026-08-29-verification-frontier.md#a-cheaper-judge-does-not-get-cheaper)).
 
 ## What it caches, and what it refuses to
 

@@ -24,6 +24,8 @@ Measured on 616 labeled pairs, embeddings from `text-embedding-3-small`, stage-1
 
 The judge gives 24 points more recall and 7× fewer silent wrong answers than cosine alone, for 5.3% of the provider spend it avoids. Adding a deterministic language gate in front of stage 2 cuts false hits by a further 3.5 points **without costing a single hit**, because an answer in the wrong language is never interchangeable and no model call is needed to see that.
 
+`gpt-5-nano` and `gpt-5-mini` do not improve that trade. Nano ($0.05 / $0.40 per million tokens, `reasoning_effort=minimal`) costs 4.3% of savings and drops hit rate to 89%, mostly by refusing paraphrases. Mini keeps the 97% hit rate and cuts gated false hits to 0.2%, but at $2.00 per million output tokens the judge costs 19.9% of what it saves. The default stays `gpt-4o-mini`. Details: [the verifier write-up](docs/posts/2026-08-29-verification-frontier.md#a-cheaper-judge-does-not-get-cheaper).
+
 Every false hit left in either verifier is `language_switch`: **excluding that category, false-hit is 0.0% (0/359)** — negation, entity swaps, numbers, dates and scope are fully separated. The gate closes 17 of the 24 such pairs that reach stage 2; the residual 7 are short English queries, where language identification cannot be trusted without also rejecting legitimate keyword traffic ([why](docs/posts/2026-08-29-verification-frontier.md#the-language-gate-and-what-it-cannot-do)).
 
 ## Invalidation

@@ -14,9 +14,9 @@ type stubComplete struct {
 	calls  int
 }
 
-func (s *stubComplete) Complete(context.Context, string, string) (string, int, error) {
+func (s *stubComplete) Complete(context.Context, string, string) (Completion, error) {
 	s.calls++
-	return s.text, s.tokens, s.err
+	return Completion{Text: s.text, Completion: s.tokens}, s.err
 }
 
 func TestJudgeParsesAndCaches(t *testing.T) {
@@ -65,5 +65,26 @@ func TestJudgeParsesAndCaches(t *testing.T) {
 	}
 	if _, err := os.Stat(filepath.Join(dir, judgeKey("with key", "without key")+".json")); err != nil {
 		t.Fatal(err)
+	}
+}
+
+func TestJudgeOldCacheKeepsFlatPrice(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	key := judgeKey("a", "b")
+	body := []byte(`{"ok":false,"score":0,"reason":"negation","tokens":40}`)
+	if err := os.WriteFile(filepath.Join(dir, key+".json"), body, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	j := NewJudge(&stubComplete{text: `{"interchangeable":true}`, tokens: 1}, dir)
+	j.InputPerM, j.OutputPerM = 0.05, 0.40
+	if _, err := j.Interchangeable(context.Background(), "a", "b"); err != nil {
+		t.Fatal(err)
+	}
+	if j.PromptTokens+j.CompletionTokens != 0 {
+		t.Fatalf("old cache exposed a split: prompt %d completion %d", j.PromptTokens, j.CompletionTokens)
+	}
+	if got := j.USD(); got != 40.0/1_000_000*j.PricePer {
+		t.Fatalf("USD = %v, want flat price on a pre-split cache", got)
 	}
 }

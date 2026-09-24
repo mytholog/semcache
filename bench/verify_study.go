@@ -248,7 +248,10 @@ func runJudge(ctx context.Context, cfg config, pairs []scored, sims []float64, l
 	j := verify.NewJudge(verify.OpenAICompleter{
 		Do:    do,
 		Model: cfg.judgeModel,
-	}, filepath.Join(cfg.cacheDir, "judge"))
+	}, verify.JudgeCacheDir(cfg.cacheDir, cfg.judgeModel))
+	if in, out, ok := verify.ModelPrices(cfg.judgeModel); ok {
+		j.InputPerM, j.OutputPerM = in, out
+	}
 
 	ok := make([]bool, len(pairs))
 	g, gctx := errgroup.WithContext(ctx)
@@ -271,12 +274,14 @@ func runJudge(ctx context.Context, cfg config, pairs []scored, sims []float64, l
 	}
 	c := verify.Evaluate(sims, labels, cfg.retrieveMin, ok)
 	cost := verify.Cost{
-		Hits:            c.TP + c.FP,
-		VerifyCalls:     c.VerifyCalls,
-		VerifyCacheHits: j.CacheHits,
-		JudgeTokens:     j.Tokens,
-		ProviderUSD:     cfg.providerUSD,
-		VerifyUSD:       j.USD(),
+		Hits:             c.TP + c.FP,
+		VerifyCalls:      c.VerifyCalls,
+		VerifyCacheHits:  j.CacheHits,
+		JudgeTokens:      j.Tokens,
+		PromptTokens:     j.PromptTokens,
+		CompletionTokens: j.CompletionTokens,
+		ProviderUSD:      cfg.providerUSD,
+		VerifyUSD:        j.USD(),
 	}
 	return c, cost, ok, nil
 }
@@ -379,8 +384,8 @@ func printCounts(out *os.File, c verify.Counts) {
 // стадии, cache-hits — сколько из них закрыл кэш решений, но стоимость всё равно
 // считается как за полный прогон.
 func printCost(out *os.File, c verify.Cost) {
-	fmt.Fprintf(out, "  cost: hits %d  saved $%.4f  verify $%.4f  verify/saved %.1f%%  tokens %d  verify-calls %d  from cache %d\n",
-		c.Hits, c.SavedUSD(), c.VerifyUSD, c.VerifyShare()*100, c.JudgeTokens, c.VerifyCalls, c.VerifyCacheHits)
+	fmt.Fprintf(out, "  cost: hits %d  saved $%.4f  verify $%.4f  verify/saved %.1f%%  tokens %d (prompt %d, completion %d)  verify-calls %d  from cache %d\n",
+		c.Hits, c.SavedUSD(), c.VerifyUSD, c.VerifyShare()*100, c.JudgeTokens, c.PromptTokens, c.CompletionTokens, c.VerifyCalls, c.VerifyCacheHits)
 }
 
 func okAt(scores []float64, min float64) []bool {

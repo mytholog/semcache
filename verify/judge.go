@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 
 	"golang.org/x/sync/singleflight"
@@ -26,23 +27,42 @@ If they are paraphrases or differ only in politeness/formatting, answer true.
 
 Return JSON only: {"interchangeable": true|false, "reason": "short English"}`
 
+// Completion — ответ судьи и его счётчик токенов.
+// Prompt и Completion раздельно, потому что у моделей разная цена входа и выхода.
+// Если API отдал только total, всё попадает в Completion, а Prompt остаётся нулём.
+type Completion struct {
+	Text       string
+	Prompt     int
+	Completion int
+}
+
+// Tokens — полный счёт, по которому сравниваются прогоны.
+func (c Completion) Tokens() int { return c.Prompt + c.Completion }
+
 // Completer — узкий порт к LLM, чтобы тесты не ходили в сеть.
 type Completer interface {
-	Complete(ctx context.Context, system, user string) (text string, tokens int, err error)
+	Complete(ctx context.Context, system, user string) (Completion, error)
 }
 
 type judgeCacheFile struct {
-	OK     bool    `json:"ok"`
-	Score  float64 `json:"score"`
-	Reason string  `json:"reason"`
-	Tokens int     `json:"tokens"`
+	OK               bool    `json:"ok"`
+	Score            float64 `json:"score"`
+	Reason           string  `json:"reason"`
+	Tokens           int     `json:"tokens"`
+	PromptTokens     int     `json:"prompt_tokens,omitempty"`
+	CompletionTokens int     `json:"completion_tokens,omitempty"`
 }
 
 // Judge — LLM-верификатор с дисковым кэшем точных пар.
 type Judge struct {
 	Complete Completer
 	CacheDir string
-	PricePer float64 // USD за миллион токенов, грубая оценка
+	PricePer float64 // USD за миллион токенов, когда разбивки на вход/выход нет
+
+	// InputPerM и OutputPerM — USD за миллион входных и выходных токенов.
+	// Нулевые значения оставляют плоскую оценку PricePer.
+	InputPerM  float64
+	OutputPerM float64
 
 	// MaxMemo — предел памяти решений. Ноль означает «без предела», что
 	// годится для прогона бенча и не годится для сервера.
@@ -55,16 +75,21 @@ type Judge struct {
 	// Calls и SpentTokens — что реально ушло в API в этом прогоне.
 	// Tokens — сколько стоил бы холодный прогон: только эта величина
 	// не зависит от состояния кэша, поэтому cost model считается по ней.
-	Calls       int
-	CacheHits   int
-	Tokens      int
-	SpentTokens int
+	// PromptTokens и CompletionTokens — та же сумма, разложенная по цене.
+	Calls            int
+	CacheHits        int
+	Tokens           int
+	PromptTokens     int
+	CompletionTokens int
+	SpentTokens      int
 }
 
 // judged — решение вместе с ценой его получения.
 type judged struct {
-	decision Decision
-	tokens   int
+	decision   Decision
+	tokens     int
+	prompt     int
+	completion int
 }
 
 // DefaultMaxMemo ограничивает память решений: в долгоживущем процессе карта
@@ -106,8 +131,7 @@ func (j *Judge) Interchangeable(ctx context.Context, incoming, cached string) (D
 func (j *Judge) lookup(key string) (Decision, bool, error) {
 	j.mu.Lock()
 	if rec, ok := j.mem[key]; ok {
-		j.CacheHits++
-		j.Tokens += rec.tokens
+		j.note(rec)
 		j.mu.Unlock()
 		return rec.decision, true, nil
 	}
@@ -119,15 +143,22 @@ func (j *Judge) lookup(key string) (Decision, bool, error) {
 	}
 	j.mu.Lock()
 	j.mem[key] = rec
-	j.CacheHits++
-	j.Tokens += rec.tokens
+	j.note(rec)
 	j.mu.Unlock()
 	return rec.decision, true, nil
 }
 
+// note учитывает решение из кэша в холодной стоимости. Вызывать под j.mu.
+func (j *Judge) note(rec judged) {
+	j.CacheHits++
+	j.Tokens += rec.tokens
+	j.PromptTokens += rec.prompt
+	j.CompletionTokens += rec.completion
+}
+
 func (j *Judge) complete(ctx context.Context, key, incoming, cached string) (Decision, error) {
 	user := "A: " + incoming + "\nB: " + cached
-	text, tokens, err := j.Complete.Complete(ctx, judgeRubric, user)
+	got, err := j.Complete.Complete(ctx, judgeRubric, user)
 	if err != nil {
 		return Decision{}, fmt.Errorf("judge complete: %w", err)
 	}
@@ -136,17 +167,20 @@ func (j *Judge) complete(ctx context.Context, key, incoming, cached string) (Dec
 		Interchangeable bool   `json:"interchangeable"`
 		Reason          string `json:"reason"`
 	}
-	if err := json.Unmarshal([]byte(text), &parsed); err != nil {
+	if err := json.Unmarshal([]byte(got.Text), &parsed); err != nil {
 		return Decision{}, fmt.Errorf("judge json: %w", err)
 	}
 	d := Decision{OK: parsed.Interchangeable, Reason: parsed.Reason}
 	if d.OK {
 		d.Score = 1
 	}
+	tokens := got.Tokens()
 
 	j.mu.Lock()
 	j.Calls++
 	j.Tokens += tokens
+	j.PromptTokens += got.Prompt
+	j.CompletionTokens += got.Completion
 	j.SpentTokens += tokens
 	// Сброс целиком вместо вытеснения по возрасту: память экономит только
 	// повторные пары в пределах короткого окна, для этого точность
@@ -154,10 +188,11 @@ func (j *Judge) complete(ctx context.Context, key, incoming, cached string) (Dec
 	if j.MaxMemo > 0 && len(j.mem) >= j.MaxMemo {
 		j.mem = make(map[string]judged, j.MaxMemo)
 	}
-	j.mem[key] = judged{decision: d, tokens: tokens}
+	rec := judged{decision: d, tokens: tokens, prompt: got.Prompt, completion: got.Completion}
+	j.mem[key] = rec
 	j.mu.Unlock()
 
-	if err := j.save(key, judged{decision: d, tokens: tokens}); err != nil {
+	if err := j.save(key, rec); err != nil {
 		return d, err
 	}
 	return d, nil
@@ -168,7 +203,40 @@ func (j *Judge) complete(ctx context.Context, key, incoming, cached string) (Dec
 func (j *Judge) USD() float64 {
 	j.mu.Lock()
 	defer j.mu.Unlock()
+	// Разбивка есть только у свежих записей. Старый кэш хранит один total,
+	// и для него остаётся плоская PricePer — иначе повтор августа 2026
+	// пересчитает уже опубликованные 5.3%.
+	if (j.InputPerM > 0 || j.OutputPerM > 0) && j.PromptTokens+j.CompletionTokens > 0 {
+		return float64(j.PromptTokens)/1_000_000*j.InputPerM +
+			float64(j.CompletionTokens)/1_000_000*j.OutputPerM
+	}
 	return float64(j.Tokens) / 1_000_000 * j.PricePer
+}
+
+// ModelPrices — цены OpenAI на 2026-09-24, USD за миллион токенов.
+// Неизвестная модель оставляет плоскую оценку PricePer.
+func ModelPrices(model string) (inputPerM, outputPerM float64, ok bool) {
+	switch model {
+	case "gpt-4o-mini":
+		return 0.15, 0.60, true
+	case "gpt-5-nano":
+		return 0.05, 0.40, true
+	case "gpt-5-mini":
+		return 0.25, 2.00, true
+	default:
+		return 0, 0, false
+	}
+}
+
+// JudgeCacheDir кладёт решения каждой модели в свой каталог.
+// gpt-4o-mini остаётся в историческом judge/: там уже лежит прогон,
+// на котором посчитаны числа в README.
+func JudgeCacheDir(root, model string) string {
+	dir := filepath.Join(root, "judge")
+	if model == "" || model == "gpt-4o-mini" {
+		return dir
+	}
+	return filepath.Join(dir, strings.ReplaceAll(model, "/", "_"))
 }
 
 func judgeKey(a, b string) string {
@@ -192,8 +260,10 @@ func (j *Judge) load(key string) (judged, bool, error) {
 		return judged{}, false, fmt.Errorf("parse judge cache: %w", err)
 	}
 	return judged{
-		decision: Decision{OK: rec.OK, Score: rec.Score, Reason: rec.Reason},
-		tokens:   rec.Tokens,
+		decision:   Decision{OK: rec.OK, Score: rec.Score, Reason: rec.Reason},
+		tokens:     rec.Tokens,
+		prompt:     rec.PromptTokens,
+		completion: rec.CompletionTokens,
 	}, true, nil
 }
 
@@ -205,10 +275,12 @@ func (j *Judge) save(key string, rec judged) error {
 		return fmt.Errorf("create judge cache: %w", err)
 	}
 	data, err := json.Marshal(judgeCacheFile{
-		OK:     rec.decision.OK,
-		Score:  rec.decision.Score,
-		Reason: rec.decision.Reason,
-		Tokens: rec.tokens,
+		OK:               rec.decision.OK,
+		Score:            rec.decision.Score,
+		Reason:           rec.decision.Reason,
+		Tokens:           rec.tokens,
+		PromptTokens:     rec.prompt,
+		CompletionTokens: rec.completion,
 	})
 	if err != nil {
 		return fmt.Errorf("encode judge cache: %w", err)
@@ -231,7 +303,7 @@ type OpenAICompleter struct {
 	BaseURL string
 }
 
-func (c OpenAICompleter) Complete(ctx context.Context, system, user string) (string, int, error) {
+func (c OpenAICompleter) Complete(ctx context.Context, system, user string) (Completion, error) {
 	req := map[string]any{
 		"model": c.Model,
 		"messages": []map[string]string{
@@ -239,15 +311,22 @@ func (c OpenAICompleter) Complete(ctx context.Context, system, user string) (str
 			{"role": "user", "content": user},
 		},
 		"response_format": map[string]string{"type": "json_object"},
-		"temperature":     0,
+	}
+	// gpt-5 принимает только temperature=1 и молча тратит бюджет на рассуждение.
+	// Для классификатора это лишние выходные токены: minimal убирает их,
+	// а поле temperature не отправляем — ноль API отвергает.
+	if strings.HasPrefix(c.Model, "gpt-5") {
+		req["reasoning_effort"] = "minimal"
+	} else {
+		req["temperature"] = 0
 	}
 	payload, err := json.Marshal(req)
 	if err != nil {
-		return "", 0, fmt.Errorf("encode judge request: %w", err)
+		return Completion{}, fmt.Errorf("encode judge request: %w", err)
 	}
 	raw, err := c.Do(ctx, payload)
 	if err != nil {
-		return "", 0, err
+		return Completion{}, err
 	}
 	var resp struct {
 		Choices []struct {
@@ -256,14 +335,24 @@ func (c OpenAICompleter) Complete(ctx context.Context, system, user string) (str
 			} `json:"message"`
 		} `json:"choices"`
 		Usage struct {
-			TotalTokens int `json:"total_tokens"`
+			PromptTokens     int `json:"prompt_tokens"`
+			CompletionTokens int `json:"completion_tokens"`
+			TotalTokens      int `json:"total_tokens"`
 		} `json:"usage"`
 	}
 	if err := json.Unmarshal(raw, &resp); err != nil {
-		return "", 0, fmt.Errorf("decode judge response: %w", err)
+		return Completion{}, fmt.Errorf("decode judge response: %w", err)
 	}
 	if len(resp.Choices) == 0 {
-		return "", 0, fmt.Errorf("judge returned no choices")
+		return Completion{}, fmt.Errorf("judge returned no choices")
 	}
-	return resp.Choices[0].Message.Content, resp.Usage.TotalTokens, nil
+	prompt, completion := resp.Usage.PromptTokens, resp.Usage.CompletionTokens
+	if prompt+completion == 0 {
+		completion = resp.Usage.TotalTokens
+	}
+	return Completion{
+		Text:       resp.Choices[0].Message.Content,
+		Prompt:     prompt,
+		Completion: completion,
+	}, nil
 }

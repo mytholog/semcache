@@ -19,6 +19,8 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"path/filepath"
+	"strings"
 	"syscall"
 	"time"
 
@@ -248,11 +250,20 @@ func newVerifier(cfg config, upstream *Upstream, log *slog.Logger) (verify.Verif
 		log.Warn("second stage disabled: cosine similarity alone is not a safe cache key")
 		return verify.Noop{}, nil
 	case "judge":
+		// Каталог кэша включает модель: смена -judge-model не должна
+		// отдавать решения, вынесенные другой моделью.
+		cacheDir := cfg.judgeCache
+		if cacheDir != "" && cfg.judgeModel != "" {
+			cacheDir = filepath.Join(cacheDir, strings.ReplaceAll(cfg.judgeModel, "/", "_"))
+		}
 		judge := verify.NewJudge(verify.OpenAICompleter{
 			Do:      upstream.ChatDo,
 			Model:   cfg.judgeModel,
 			BaseURL: cfg.upstream,
-		}, cfg.judgeCache)
+		}, cacheDir)
+		if in, out, ok := verify.ModelPrices(cfg.judgeModel); ok {
+			judge.InputPerM, judge.OutputPerM = in, out
+		}
 		return judge, nil
 	default:
 		return nil, fmt.Errorf("unknown verifier %q: want judge or noop", cfg.verifier)
