@@ -4,7 +4,7 @@ go 1.27.0
 
 require (
 	github.com/maximhq/bifrost/core v1.10.1
-	github.com/mytholog/semcache v0.0.0
+	github.com/mytholog/semcache v0.1.0
 	github.com/pemistahl/lingua-go v1.4.0
 	golang.org/x/sync v0.23.0
 )
@@ -88,9 +88,5 @@ require (
 	google.golang.org/protobuf v1.36.12-0.20260120151049-f2248ac996af // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect
 )
-
-// Плагин живёт в том же репозитории, что и кэш: локальная сборка должна брать
-// соседний код, а не опубликованную версию.
-replace github.com/mytholog/semcache => ../..
 
 tool golang.org/x/vuln/cmd/govulncheck

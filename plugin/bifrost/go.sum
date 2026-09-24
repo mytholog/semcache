@@ -127,6 +127,8 @@ github.com/maximhq/bifrost/core v1.10.1 h1:cNb4z26/bPEy2rWaiuVy0jpg8crzPwbKnUmT2
 github.com/maximhq/bifrost/core v1.10.1/go.mod h1:bgTt5CsqB7duKiy/pC0uUMTxIRnvjj0t2OvH7Tlvuz0=
 github.com/molecule-man/go-brrr v1.0.1 h1:cEjgx8hgNw6UGdhQ94SPDbPkKuRbkUcxBO3IzbGpA/o=
 github.com/molecule-man/go-brrr v1.0.1/go.mod h1:7ybW6/7gA3oKY45jOfVNjSJDtrr6ea4tzbsTkjmQDC4=
+github.com/mytholog/semcache v0.1.0 h1:XWxmTdP8N4puBRIdwWIQrp94a4pukWH7CVbG2HyWsFA=
+github.com/mytholog/semcache v0.1.0/go.mod h1:kzi5a8SjYa/ttNwyps4Q95flHb236k9yb7uEOlZFmv8=
 github.com/pemistahl/lingua-go v1.4.0 h1:ifYhthrlW7iO4icdubwlduYnmwU37V1sbNrwhKBR4rM=
 github.com/pemistahl/lingua-go v1.4.0/go.mod h1:ECuM1Hp/3hvyh7k8aWSqNCPlTxLemFZsRjocUf3KgME=
 github.com/pkg/browser v0.0.0-20240102092130-5ac0b6a4141c h1:+mdjkGKdHQG3305AYmdv1U2eRNDiU2ErMBj1gwrq8eQ=
