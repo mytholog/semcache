@@ -1,0 +1,22 @@
+{
+  "title": "semcache",
+  "uid": "semcache",
+  "schemaVersion": 39,
+  "panels": [
+    {
+      "type": "timeseries",
+      "title": "Lookups",
+      "gridPos": {"h": 8, "w": 12, "x": 0, "y": 0},
+      "targets": [{"expr": "sum by (kind) (rate(semcache_lookups_total[1m]))", "legendFormat": "{{kind}}"}]
+    },
+    {
+      "type": "timeseries",
+      "title": "Lookup and upstream time",
+      "gridPos": {"h": 8, "w": 12, "x": 12, "y": 0},
+      "targets": [
+        {"expr": "rate(semcache_lookup_seconds_total[1m])", "legendFormat": "lookup"},
+        {"expr": "rate(semcache_upstream_seconds_total[1m])", "legendFormat": "upstream"}
+      ]
+    }
+  ]
+}

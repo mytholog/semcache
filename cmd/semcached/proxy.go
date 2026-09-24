@@ -44,6 +44,9 @@ type Server struct {
 	// метриках и логе, а не проглатывается.
 	FailOpen bool
 
+	// Trace необязателен. Пустой Endpoint только собирает спан, если задан Export.
+	Trace *Tracer
+
 	writes   *writeQueue
 	inflight singleflight.Group
 }
@@ -87,6 +90,9 @@ type chatResponse struct {
 
 func (s *Server) handleChat(w http.ResponseWriter, r *http.Request) {
 	s.Metrics.Inc("semcache_requests_total", "")
+	sp := s.Trace.start(r, "chat")
+	outcome := "error"
+	defer func() { sp.finish(outcome) }()
 
 	body, err := io.ReadAll(io.LimitReader(r.Body, s.MaxBody))
 	if err != nil {
@@ -99,9 +105,11 @@ func (s *Server) handleChat(w http.ResponseWriter, r *http.Request) {
 		s.fail(w, http.StatusBadRequest, "parse request body", err)
 		return
 	}
+	sp.set("gen_ai.request.model", req.Model)
 
 	prompt, reason := cacheKey(&req, r.Header)
 	if reason != "" {
+		outcome = "bypass"
 		s.Metrics.Inc("semcache_bypassed_total", `reason="`+reason+`"`)
 		w.Header().Set(headerReason, reason)
 		s.forward(r.Context(), w, r, body, &req, "", nil)
@@ -115,15 +123,18 @@ func (s *Server) handleChat(w http.ResponseWriter, r *http.Request) {
 	res, err := s.Cache.Get(r.Context(), q)
 	s.Metrics.Observe("semcache_lookup_seconds_total", "", time.Since(start))
 	if err != nil {
+		outcome = "lookup_error"
 		s.Metrics.Inc("semcache_errors_total", `stage="lookup"`)
 		s.Log.Error("cache lookup failed", "error", err, "namespace", namespace)
 		if !s.FailOpen {
 			s.fail(w, http.StatusBadGateway, "cache lookup", err)
 			return
 		}
+		outcome = semcache.KindMiss
 		s.forward(r.Context(), w, r, body, &req, prompt, nil)
 		return
 	}
+	outcome = res.Kind
 	s.Metrics.Inc("semcache_lookups_total", `kind="`+res.Kind+`"`)
 
 	if res.Hit() {

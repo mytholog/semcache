@@ -139,4 +139,8 @@ make plugin-test       # the Bifrost plugin (separate module)
 make plugin-demo       # four questions through a Bifrost gateway
 ```
 
+`/metrics` is Prometheus text. Spans follow `gen_ai.*` and are posted as OTLP/HTTP JSON when `-otlp` is set; the OpenTelemetry SDK stays out of this module. `docker compose -f deploy/compose.yaml up` starts Prometheus and Grafana against a proxy already listening on `:8080`.
+
+Proxy overhead, on one machine, with an in-process embedder and an upstream that returns immediately (`SEMCACHE_OVERHEAD=1 go test -run TestOverhead ./cmd/semcached`): a miss adds under 0.2 ms at p99 over calling that upstream directly, and an exact hit is about 0.2 ms at p50. `k6 run deploy/k6.js` repeats the comparison at a fixed arrival rate; it only means something if `-upstream` is a local echo.
+
 Requires Go 1.27, `uv` for the Python sidecar, Docker for the Postgres store, and `OPENAI_API_KEY` for hosted embeddings and the judge. Embeddings, rerank scores and judge decisions cache under `bench/.cache/`; a cold judge run over v1 costs about $0.02. Cost is always reported for a cold run, so re-running does not print free verification. Store tests skip themselves unless `SEMCACHE_TEST_DSN` is set.

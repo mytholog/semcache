@@ -54,6 +54,7 @@ type config struct {
 
 	lang     bool
 	failOpen bool
+	otlp     string
 
 	workers      int
 	queueDepth   int
@@ -86,6 +87,7 @@ func main() {
 
 	flag.BoolVar(&cfg.lang, "lang", true, "detect the answer language and reject cross-language hits")
 	flag.BoolVar(&cfg.failOpen, "fail-open", true, "on cache errors, still call the provider")
+	flag.StringVar(&cfg.otlp, "otlp", "", "OTLP/HTTP JSON traces endpoint, for example http://localhost:4318/v1/traces")
 
 	flag.IntVar(&cfg.workers, "writers", 4, "background cache writers")
 	flag.IntVar(&cfg.queueDepth, "write-queue", 256, "pending cache writes before dropping")
@@ -175,6 +177,7 @@ func run(cfg config, log *slog.Logger) error {
 		NamespacePrefix: cfg.namespace,
 		MaxBody:         cfg.maxBody,
 		FailOpen:        cfg.failOpen,
+		Trace:           &Tracer{Endpoint: cfg.otlp, Log: log},
 	}
 	metrics := srv.Metrics
 	srv.writes = newWriteQueue(cfg.workers, cfg.queueDepth, cfg.writeTimeout, func() {
