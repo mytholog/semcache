@@ -3,7 +3,7 @@ module github.com/mytholog/semcache/plugin/bifrost
 go 1.27.0
 
 require (
-	github.com/maximhq/bifrost/core v1.8.6
+	github.com/maximhq/bifrost/core v1.10.1
 	github.com/mytholog/semcache v0.0.0
 	github.com/pemistahl/lingua-go v1.4.0
 	golang.org/x/sync v0.23.0
@@ -57,7 +57,7 @@ require (
 	github.com/mailru/easyjson v0.9.1 // indirect
 	github.com/mark3labs/mcp-go v0.43.2 // indirect
 	github.com/mattn/go-colorable v0.1.14 // indirect
-	github.com/mattn/go-isatty v0.0.20 // indirect
+	github.com/mattn/go-isatty v0.0.24 // indirect
 	github.com/molecule-man/go-brrr v1.0.1 // indirect
 	github.com/pkg/browser v0.0.0-20240102092130-5ac0b6a4141c // indirect
 	github.com/rs/zerolog v1.34.0 // indirect
